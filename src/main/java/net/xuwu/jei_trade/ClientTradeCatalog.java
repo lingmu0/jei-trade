@@ -40,10 +40,10 @@ public final class ClientTradeCatalog {
         net.minecraft.resources.ResourceLocation professionId = null;
         List<net.minecraft.resources.ResourceLocation> workstations = List.of();
         if (merchant instanceof net.minecraft.world.entity.Entity entity) {
-            entityId = net.minecraftforge.registries.ForgeRegistries.ENTITY_TYPES.getKey(entity.getType());
+            entityId = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType());
             if (merchant instanceof VillagerDataHolder holder) {
                 var profession = holder.getVillagerData().getProfession();
-                professionId = net.minecraftforge.registries.ForgeRegistries.VILLAGER_PROFESSIONS.getKey(profession);
+                professionId = net.minecraft.core.registries.BuiltInRegistries.VILLAGER_PROFESSION.getKey(profession);
                 if (entity.level() != null) workstations = TradeCatalogBuilder.findWorkstations(entity.level(), profession);
             }
         }

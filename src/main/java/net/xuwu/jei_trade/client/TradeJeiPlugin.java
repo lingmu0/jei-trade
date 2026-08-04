@@ -16,7 +16,7 @@ public final class TradeJeiPlugin implements IModPlugin {
 
     @Override
     public ResourceLocation getPluginUid() {
-        return new ResourceLocation(Jei_trade.MODID, "jei_plugin");
+        return ResourceLocation.fromNamespaceAndPath(Jei_trade.MODID, "jei_plugin");
     }
 
     @Override

@@ -6,16 +6,16 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.npc.VillagerDataHolder;
 import net.minecraft.world.item.trading.Merchant;
-import net.minecraftforge.event.entity.player.PlayerInteractEvent;
-import net.minecraftforge.event.entity.player.PlayerEvent;
-import net.minecraftforge.event.server.ServerStartedEvent;
-import net.minecraftforge.eventbus.api.SubscribeEvent;
-import net.minecraftforge.fml.common.Mod;
+import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.fml.common.EventBusSubscriber;
+import net.neoforged.neoforge.event.entity.player.PlayerEvent;
+import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
+import net.neoforged.neoforge.event.server.ServerStartedEvent;
 
 import java.util.Map;
 import java.util.WeakHashMap;
 
-@Mod.EventBusSubscriber(modid = Jei_trade.MODID, bus = Mod.EventBusSubscriber.Bus.FORGE)
+@EventBusSubscriber(modid = Jei_trade.MODID, bus = EventBusSubscriber.Bus.GAME)
 public final class ServerTradeEvents {
     private static final Map<MinecraftServer, TradeServerCatalog> CATALOGS = new WeakHashMap<>();
 
@@ -54,12 +54,12 @@ public final class ServerTradeEvents {
             java.util.List<TradeRecipe> before = catalog.snapshot();
             java.util.List<TradeRecipe> observed = new java.util.ArrayList<>();
             for (var offer : merchant.getOffers()) {
-                net.minecraft.resources.ResourceLocation entityId = net.minecraftforge.registries.ForgeRegistries.ENTITY_TYPES.getKey(target.getType());
+                net.minecraft.resources.ResourceLocation entityId = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(target.getType());
                 net.minecraft.resources.ResourceLocation professionId = null;
                 java.util.List<net.minecraft.resources.ResourceLocation> workstations = java.util.List.of();
                 if (merchant instanceof VillagerDataHolder holder) {
                     var profession = holder.getVillagerData().getProfession();
-                    professionId = net.minecraftforge.registries.ForgeRegistries.VILLAGER_PROFESSIONS.getKey(profession);
+                    professionId = net.minecraft.core.registries.BuiltInRegistries.VILLAGER_PROFESSION.getKey(profession);
                     workstations = TradeCatalogBuilder.findWorkstations(target.level(), profession);
                 }
                 observed.add(TradeRecipe.fromOffer(entityId, professionId, workstations, level, offer));

@@ -4,6 +4,7 @@ import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 import net.minecraft.core.Holder;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.Registries;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.RandomSource;
@@ -33,7 +34,7 @@ public final class TradeCatalogBuilder {
 
     public static List<TradeRecipe> build(Level level) {
         List<TradeRecipe> result = new ArrayList<>();
-        Registry<VillagerProfession> professions = level.registryAccess().registryOrThrow(Registries.VILLAGER_PROFESSION);
+        Registry<VillagerProfession> professions = BuiltInRegistries.VILLAGER_PROFESSION;
         for (Map.Entry<VillagerProfession, Int2ObjectMap<VillagerTrades.ItemListing[]>> professionEntry : VillagerTrades.TRADES.entrySet()) {
             VillagerProfession profession = professionEntry.getKey();
             ResourceLocation professionId = professions.getKey(profession);
@@ -50,7 +51,7 @@ public final class TradeCatalogBuilder {
                         MerchantOffer offer = listings[index].getOffer(villager,
                                 RandomSource.create(seedFor(professionId, levelNumber, index)));
                         if (offer != null) {
-                            result.add(TradeRecipe.fromOffer(new ResourceLocation("minecraft", "villager"),
+                            result.add(TradeRecipe.fromOffer(ResourceLocation.fromNamespaceAndPath("minecraft", "villager"),
                                     professionId, workstations, levelNumber, offer));
                         }
                     } catch (RuntimeException ex) {
@@ -74,7 +75,7 @@ public final class TradeCatalogBuilder {
             for (BlockState state : entry.getValue().matchingStates()) {
                 Block block = state.getBlock();
                 if (!block.asItem().equals(net.minecraft.world.item.Items.AIR)) {
-                    ResourceLocation blockId = net.minecraftforge.registries.ForgeRegistries.BLOCKS.getKey(block);
+                    ResourceLocation blockId = BuiltInRegistries.BLOCK.getKey(block);
                     if (blockId != null) ids.add(blockId);
                 }
             }

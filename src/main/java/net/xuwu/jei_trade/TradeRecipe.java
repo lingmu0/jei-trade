@@ -1,7 +1,6 @@
 package net.xuwu.jei_trade;
 
-import net.minecraft.network.FriendlyByteBuf;
-import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.trading.MerchantOffer;
@@ -58,7 +57,7 @@ public final class TradeRecipe {
                 offer.shouldRewardExp());
     }
 
-    public static TradeRecipe read(FriendlyByteBuf buf) {
+    public static TradeRecipe read(RegistryFriendlyByteBuf buf) {
         ResourceLocation entityType = readOptionalLocation(buf);
         ResourceLocation profession = readOptionalLocation(buf);
         int workstationCount = buf.readVarInt();
@@ -67,26 +66,26 @@ public final class TradeRecipe {
             workstations.add(buf.readResourceLocation());
         }
         int level = buf.readVarInt();
-        ItemStack buyA = buf.readItem();
-        ItemStack buyB = buf.readBoolean() ? buf.readItem() : ItemStack.EMPTY;
-        ItemStack result = buf.readItem();
+        ItemStack buyA = ItemStack.STREAM_CODEC.decode(buf);
+        ItemStack buyB = buf.readBoolean() ? ItemStack.STREAM_CODEC.decode(buf) : ItemStack.EMPTY;
+        ItemStack result = ItemStack.STREAM_CODEC.decode(buf);
         return new TradeRecipe(entityType, profession, workstations, level, buyA, buyB, result,
                 buf.readVarInt(), buf.readVarInt(), buf.readVarInt(), buf.readFloat(),
                 buf.readVarInt(), buf.readVarInt(), buf.readBoolean());
     }
 
-    public void write(FriendlyByteBuf buf) {
+    public void write(RegistryFriendlyByteBuf buf) {
         writeOptionalLocation(buf, entityType);
         writeOptionalLocation(buf, profession);
         buf.writeVarInt(workstations.size());
         workstations.forEach(buf::writeResourceLocation);
         buf.writeVarInt(level);
-        buf.writeItem(buyA);
+        ItemStack.STREAM_CODEC.encode(buf, buyA);
         buf.writeBoolean(!buyB.isEmpty());
         if (!buyB.isEmpty()) {
-            buf.writeItem(buyB);
+            ItemStack.STREAM_CODEC.encode(buf, buyB);
         }
-        buf.writeItem(result);
+        ItemStack.STREAM_CODEC.encode(buf, result);
         buf.writeVarInt(uses);
         buf.writeVarInt(maxUses);
         buf.writeVarInt(xp);
@@ -96,14 +95,14 @@ public final class TradeRecipe {
         buf.writeBoolean(rewardExp);
     }
 
-    private static void writeOptionalLocation(FriendlyByteBuf buf, ResourceLocation location) {
+    private static void writeOptionalLocation(RegistryFriendlyByteBuf buf, ResourceLocation location) {
         buf.writeBoolean(location != null);
         if (location != null) {
             buf.writeResourceLocation(location);
         }
     }
 
-    private static ResourceLocation readOptionalLocation(FriendlyByteBuf buf) {
+    private static ResourceLocation readOptionalLocation(RegistryFriendlyByteBuf buf) {
         return buf.readBoolean() ? buf.readResourceLocation() : null;
     }
 
@@ -128,7 +127,7 @@ public final class TradeRecipe {
 
     public ItemStack workstationStack() {
         if (workstations.isEmpty()) return ItemStack.EMPTY;
-        net.minecraft.world.level.block.Block block = net.minecraftforge.registries.ForgeRegistries.BLOCKS.getValue(workstations.get(0));
+        net.minecraft.world.level.block.Block block = net.minecraft.core.registries.BuiltInRegistries.BLOCK.get(workstations.get(0));
         return block == null ? ItemStack.EMPTY : new ItemStack(block);
     }
 
@@ -139,7 +138,7 @@ public final class TradeRecipe {
 
     private boolean workstationMatches(ItemStack stack) {
         for (ResourceLocation id : workstations) {
-            net.minecraft.world.level.block.Block block = net.minecraftforge.registries.ForgeRegistries.BLOCKS.getValue(id);
+            net.minecraft.world.level.block.Block block = net.minecraft.core.registries.BuiltInRegistries.BLOCK.get(id);
             if (block != null && stack.is(block.asItem())) return true;
         }
         return false;
@@ -152,7 +151,7 @@ public final class TradeRecipe {
     }
 
     private static String stackFingerprint(ItemStack stack) {
-        CompoundTag tag = stack.save(new CompoundTag());
-        return tag.toString();
+        ResourceLocation itemId = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.getItem());
+        return itemId + ":" + stack.getCount() + ":" + stack.getComponents();
     }
 }

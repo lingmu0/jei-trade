@@ -49,7 +49,7 @@ final class TradeRecipeCategory extends AbstractRecipeCategory<TradeRecipe> {
 
     @Override
     public net.minecraft.resources.ResourceLocation getRegistryName(TradeRecipe recipe) {
-        return new net.minecraft.resources.ResourceLocation(Jei_trade.MODID,
+        return net.minecraft.resources.ResourceLocation.fromNamespaceAndPath(Jei_trade.MODID,
                 "trade/" + Integer.toHexString(recipe.fingerprint().hashCode()));
     }
 }
