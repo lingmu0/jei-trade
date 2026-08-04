@@ -98,7 +98,9 @@ final class TradeListingResolver {
                     List.of(ItemStack.EMPTY), 0, List.of(item), item.getCount(),
                     intField(trade, "maxUses"), intField(trade, "villagerXp"),
                     floatField(trade, "priceMultiplier"),
-                    List.of(Component.translatable("jei_trade.detail.random_enchant", 5, 19)));
+                    List.of(Component.translatable("jei_trade.detail.random_enchant", 5, 19),
+                            Component.translatable("jei_trade.detail.treasure_enchant",
+                                    Component.translatable("jei_trade.no"))));
         }
         if (listing instanceof VillagerTrades.ItemsAndEmeraldsToItems trade) {
             ItemCost from = field(trade, "fromItem", ItemCost.class);

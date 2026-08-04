@@ -12,14 +12,10 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.resources.language.I18n;
-import it.unimi.dsi.fastutil.objects.Object2IntMap;
 import net.minecraft.ChatFormatting;
-import net.minecraft.core.Holder;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.enchantment.Enchantment;
-import net.minecraft.world.item.enchantment.ItemEnchantments;
 import net.xuwu.jei_trade.Jei_trade;
 import net.xuwu.jei_trade.TradeRecipe;
 import net.xuwu.jei_trade.TradeRecipeGroup;
@@ -80,40 +76,13 @@ final class TradeRecipeCategory extends AbstractRecipeCategory<TradeRecipeGroup>
                 boolean sameItem = variants.stream().allMatch(stack -> stack.is(variants.get(0).getItem()));
                 tooltip.add(Component.translatable(sameItem ? "jei_trade.nbt_variants" : "jei_trade.variants", nbtVariants)
                         .withStyle(ChatFormatting.GRAY));
-                java.util.Set<String> names = new java.util.LinkedHashSet<>();
-                for (ItemStack variant : variants) {
-                    if (names.size() >= 8) break;
-                    names.add(variantName(variant));
-                }
-                for (String name : names) {
-                    tooltip.add(Component.literal("  • " + name).withStyle(ChatFormatting.DARK_GRAY));
-                }
-                if (nbtVariants > names.size()) {
-                    tooltip.add(Component.translatable("jei_trade.nbt_more", nbtVariants - names.size())
-                            .withStyle(ChatFormatting.DARK_GRAY));
-                }
             }
             if (!countRange.isEmpty()) {
                 tooltip.add(Component.translatable("jei_trade.count_range", countRange)
-                        .withStyle(ChatFormatting.GOLD));
+                        .withStyle(ChatFormatting.GRAY));
             }
             if (includeDetails) trade.details().forEach(tooltip::add);
         });
-    }
-
-    private static String variantName(ItemStack stack) {
-        ItemEnchantments enchantments = stack.getTagEnchantments();
-        if (enchantments.isEmpty()) enchantments = stack.getEnchantments();
-        if (!enchantments.isEmpty()) {
-            Object2IntMap.Entry<Holder<Enchantment>> entry = enchantments.entrySet().iterator().next();
-            String name = entry.getKey().unwrapKey()
-                    .map(key -> Component.translatable("enchantment." + key.location().toString()
-                            .replace(':', '.')).getString())
-                    .orElse(entry.getKey().toString());
-            return name + " " + entry.getIntValue();
-        }
-        String name = stack.getHoverName().getString();
-        return name;
     }
 
     @Override

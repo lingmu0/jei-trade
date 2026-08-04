@@ -14,8 +14,11 @@
   "jei_trade.detail.random_dye": "Output is dyed randomly",
   "jei_trade.detail.random_book_enchant": "Output is a random tradeable enchanted book",
   "jei_trade.detail.random_enchant": "Output is enchanted randomly (levels %s-%s)",
+  "jei_trade.detail.treasure_enchant": "Treasure enchantment: %s",
   "jei_trade.detail.random_enchant_output": "Output may receive a random enchantment",
   "jei_trade.detail.stew_effects": "Output contains predefined stew effects",
   "jei_trade.detail.treasure_map": "Map type: %s",
-  "jei_trade.detail.villager_type_output": "Output depends on villager type"
+  "jei_trade.detail.villager_type_output": "Output depends on villager type",
+  "jei_trade.yes": "Yes",
+  "jei_trade.no": "No"
 }
