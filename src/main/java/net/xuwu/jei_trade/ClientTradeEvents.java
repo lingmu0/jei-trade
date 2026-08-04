@@ -8,6 +8,7 @@ import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
+import net.xuwu.jei_trade.client.TradeJeiPlugin;
 
 @EventBusSubscriber(modid = Jei_trade.MODID, bus = EventBusSubscriber.Bus.GAME, value = Dist.CLIENT)
 public final class ClientTradeEvents {
@@ -22,6 +23,7 @@ public final class ClientTradeEvents {
             MerchantMenu menu = screen.getMenu();
             ClientTradeCatalog.observeOffers(menu.getOffers(), menu.getTraderLevel());
         }
+        TradeJeiPlugin.refreshRecipes();
     }
 
     @SubscribeEvent

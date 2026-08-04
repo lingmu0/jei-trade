@@ -7,6 +7,7 @@ import net.minecraft.core.registries.Registries;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.tags.EnchantmentTags;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.npc.Villager;
@@ -14,8 +15,13 @@ import net.minecraft.world.entity.npc.VillagerData;
 import net.minecraft.world.entity.npc.VillagerProfession;
 import net.minecraft.world.entity.npc.VillagerTrades;
 import net.minecraft.world.entity.npc.VillagerType;
+import net.minecraft.world.entity.npc.WanderingTrader;
 import net.minecraft.world.entity.ai.village.poi.PoiType;
+import net.minecraft.world.item.EnchantedBookItem;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.enchantment.Enchantment;
+import net.minecraft.world.item.enchantment.EnchantmentInstance;
 import net.minecraft.world.item.trading.MerchantOffer;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
@@ -29,6 +35,8 @@ import java.util.Set;
 
 /** Builds a deterministic catalog from the actual registered villager trade factories. */
 public final class TradeCatalogBuilder {
+    private static final int RANDOM_VARIANT_SAMPLES = 32;
+
     private TradeCatalogBuilder() {
     }
 
@@ -47,20 +55,89 @@ public final class TradeCatalogBuilder {
                     Villager villager = EntityType.VILLAGER.create(level);
                     if (villager == null) continue;
                     villager.setVillagerData(new VillagerData(VillagerType.PLAINS, profession, levelNumber));
-                    try {
-                        MerchantOffer offer = listings[index].getOffer(villager,
-                                RandomSource.create(seedFor(professionId, levelNumber, index)));
-                        if (offer != null) {
-                            result.add(TradeRecipe.fromOffer(ResourceLocation.fromNamespaceAndPath("minecraft", "villager"),
-                                    professionId, workstations, levelNumber, offer));
-                        }
-                    } catch (RuntimeException ex) {
-                        Jei_trade.LOGGER.debug("Could not create example trade {} level {}", professionId, levelNumber, ex);
-                    }
+                    TradeRecipe recipe = buildListingVariants(villager, listings[index],
+                            ResourceLocation.fromNamespaceAndPath("minecraft", "villager"), professionId,
+                            workstations, levelNumber, seedFor(professionId, levelNumber, index));
+                    if (recipe != null) result.add(recipe);
                 }
             }
         }
+        result.addAll(buildWanderingTraderTrades(level));
         return deduplicate(result);
+    }
+
+    private static List<TradeRecipe> buildWanderingTraderTrades(Level level) {
+        List<TradeRecipe> result = new ArrayList<>();
+        ResourceLocation entityId = ResourceLocation.fromNamespaceAndPath("minecraft", "wandering_trader");
+        for (Int2ObjectMap.Entry<VillagerTrades.ItemListing[]> levelEntry
+                : VillagerTrades.WANDERING_TRADER_TRADES.int2ObjectEntrySet()) {
+            int levelNumber = levelEntry.getIntKey();
+            VillagerTrades.ItemListing[] listings = levelEntry.getValue();
+            for (int index = 0; index < listings.length; index++) {
+                WanderingTrader trader = EntityType.WANDERING_TRADER.create(level);
+                if (trader == null) continue;
+                TradeRecipe recipe = buildListingVariants(trader, listings[index], entityId, null,
+                        List.of(), levelNumber, seedFor(entityId, levelNumber, index));
+                if (recipe != null) result.add(recipe);
+            }
+        }
+        return result;
+    }
+
+    private static TradeRecipe buildListingVariants(net.minecraft.world.entity.Entity merchant,
+                                                    VillagerTrades.ItemListing listing,
+                                                    ResourceLocation entityType,
+                                                    ResourceLocation profession,
+                                                    List<ResourceLocation> workstations,
+                                                    int level, long seed) {
+        List<TradeRecipe> variants = new ArrayList<>();
+        for (int sample = 0; sample < RANDOM_VARIANT_SAMPLES; sample++) {
+            try {
+                MerchantOffer offer = listing.getOffer(merchant, RandomSource.create(seed + sample * 131L));
+                if (offer == null) continue;
+                TradeRecipe recipe = TradeRecipe.fromOffer(entityType, profession, workstations, level, offer);
+                if (offer.getResult().is(Items.ENCHANTED_BOOK)) {
+                    variants.addAll(expandEnchantedBookVariants(merchant.level(), recipe));
+                } else {
+                    variants.add(recipe);
+                }
+            } catch (RuntimeException ex) {
+                Jei_trade.LOGGER.debug("Could not create example trade {} level {}", profession, ex);
+            }
+        }
+        if (variants.isEmpty()) return null;
+        TradeRecipe merged = variants.get(0);
+        for (int i = 1; i < variants.size(); i++) merged = TradeRecipe.merge(merged, variants.get(i));
+        return merged;
+    }
+
+    private static List<TradeRecipe> expandEnchantedBookVariants(net.minecraft.world.level.Level level,
+                                                                 TradeRecipe base) {
+        List<TradeRecipe> result = new ArrayList<>();
+        Registry<Enchantment> enchantments = level.registryAccess().registryOrThrow(Registries.ENCHANTMENT);
+        for (Map.Entry<ResourceKey<Enchantment>, Enchantment> entry : enchantments.entrySet()) {
+            Holder<Enchantment> holder = enchantments.getHolder(entry.getKey()).orElseThrow();
+            if (!holder.is(EnchantmentTags.TRADEABLE)) continue;
+            Enchantment enchantment = entry.getValue();
+            for (int enchantmentLevel = enchantment.getMinLevel(); enchantmentLevel <= enchantment.getMaxLevel(); enchantmentLevel++) {
+                ItemStack book = EnchantedBookItem.createForEnchantment(new EnchantmentInstance(holder, enchantmentLevel));
+                int minCost = 2 + enchantmentLevel * 3;
+                int maxCost = Math.min(64, 6 + enchantmentLevel * 13);
+                if (holder.is(EnchantmentTags.DOUBLE_TRADE_PRICE)) {
+                    minCost = Math.min(64, minCost * 2);
+                    maxCost = Math.min(64, maxCost * 2);
+                }
+                ItemStack lowCost = base.buyA();
+                ItemStack highCost = base.buyA();
+                if (lowCost.is(Items.EMERALD)) {
+                    lowCost.setCount(minCost);
+                    highCost.setCount(maxCost);
+                }
+                result.add(TradeRecipe.withVariantStacks(base, lowCost, base.buyB(), book));
+                result.add(TradeRecipe.withVariantStacks(base, highCost, base.buyB(), book));
+            }
+        }
+        return result.isEmpty() ? List.of(base) : result;
     }
 
     public static List<ResourceLocation> findWorkstations(Level level, VillagerProfession profession) {

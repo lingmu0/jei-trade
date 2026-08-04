@@ -8,7 +8,7 @@ import java.util.List;
 
 /** Registers and sends the NeoForge custom payload used for server-authoritative catalog sync. */
 public final class TradeNetworking {
-    private static final String PROTOCOL = "1";
+    private static final String PROTOCOL = "2";
 
     private TradeNetworking() {
     }
