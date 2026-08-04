@@ -20,5 +20,7 @@
   "jei_trade.detail.treasure_map": "地图类型：%s",
   "jei_trade.detail.villager_type_output": "输出取决于村民外观类型",
   "jei_trade.yes": "是",
-  "jei_trade.no": "否"
+  "jei_trade.no": "否",
+  "jei_trade.possible": "可能",
+  "jei_trade.unknown": "未知"
 }

@@ -20,5 +20,7 @@
   "jei_trade.detail.treasure_map": "Map type: %s",
   "jei_trade.detail.villager_type_output": "Output depends on villager type",
   "jei_trade.yes": "Yes",
-  "jei_trade.no": "No"
+  "jei_trade.no": "No",
+  "jei_trade.possible": "Possible",
+  "jei_trade.unknown": "Unknown"
 }

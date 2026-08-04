@@ -8,12 +8,14 @@ import net.minecraft.core.component.DataComponents;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.tags.TagKey;
+import net.minecraft.tags.EnchantmentTags;
 import net.minecraft.world.entity.npc.VillagerTrades;
 import net.minecraft.world.item.EnchantedBookItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.component.SuspiciousStewEffects;
 import net.minecraft.world.item.enchantment.Enchantment;
+import net.minecraft.world.item.enchantment.EnchantmentHelper;
 import net.minecraft.world.item.enchantment.EnchantmentInstance;
 import net.minecraft.world.item.trading.ItemCost;
 import net.minecraft.world.level.Level;
@@ -99,8 +101,7 @@ final class TradeListingResolver {
                     intField(trade, "maxUses"), intField(trade, "villagerXp"),
                     floatField(trade, "priceMultiplier"),
                     List.of(Component.translatable("jei_trade.detail.random_enchant", 5, 19),
-                            Component.translatable("jei_trade.detail.treasure_enchant",
-                                    Component.translatable("jei_trade.no"))));
+                            treasureDetail(world, item)));
         }
         if (listing instanceof VillagerTrades.ItemsAndEmeraldsToItems trade) {
             ItemCost from = field(trade, "fromItem", ItemCost.class);
@@ -210,6 +211,41 @@ final class TradeListingResolver {
         return provider.isPresent()
                 ? List.of(Component.translatable("jei_trade.detail.random_enchant_output"))
                 : List.of();
+    }
+
+    private static Component treasureDetail(Level world, ItemStack item) {
+        Registry<Enchantment> enchantments = world.registryAccess()
+                .registryOrThrow(Registries.ENCHANTMENT);
+        boolean hasCandidate = false;
+        boolean hasTreasure = false;
+        boolean hasNonTreasure = false;
+        boolean hasUnknown = false;
+        List<Holder<Enchantment>> tradedEnchantments = new ArrayList<>();
+        for (Holder<Enchantment> holder : enchantments.getTagOrEmpty(EnchantmentTags.ON_TRADED_EQUIPMENT)) {
+            tradedEnchantments.add(holder);
+        }
+        for (EnchantmentInstance candidate : EnchantmentHelper.getAvailableEnchantmentResults(
+                19, item, tradedEnchantments.stream())) {
+            hasCandidate = true;
+            if (candidate.enchantment.is(EnchantmentTags.TREASURE)) {
+                hasTreasure = true;
+            } else if (candidate.enchantment.is(EnchantmentTags.NON_TREASURE)) {
+                hasNonTreasure = true;
+            } else {
+                hasUnknown = true;
+            }
+        }
+        return Component.translatable("jei_trade.detail.treasure_enchant",
+                Component.translatable(treasureStatusKey(hasCandidate, hasTreasure,
+                        hasNonTreasure, hasUnknown)));
+    }
+
+    private static String treasureStatusKey(boolean hasCandidate, boolean hasTreasure,
+                                             boolean hasNonTreasure, boolean hasUnknown) {
+        if (!hasCandidate) return "jei_trade.unknown";
+        if (hasTreasure && !hasNonTreasure && !hasUnknown) return "jei_trade.yes";
+        if (!hasTreasure && hasNonTreasure && !hasUnknown) return "jei_trade.no";
+        return "jei_trade.possible";
     }
 
     private static int intField(Object target, String name) throws ReflectiveOperationException {
