@@ -30,9 +30,11 @@ neoForge {
             programArguments.addAll('--nogui')
         }
         data {
-            clientData()
+            data()
             gameDirectory = project.file('run-data')
-            programArguments.addAll('--mod', mod_id, '--all', '--output', file('src/generated/resources/'), '--existing', file('src/main/resources/'))
+            programArguments.addAll('--mod', mod_id, '--all',
+                    '--output', file('src/generated/resources/').absolutePath,
+                    '--existing', file('src/main/resources/').absolutePath)
         }
     }
 
