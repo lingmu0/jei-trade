@@ -18,10 +18,14 @@ public final class ClientTradeEvents {
     @SubscribeEvent
     public static void onClientTick(ClientTickEvent.Post event) {
         Minecraft minecraft = Minecraft.getInstance();
-        if (minecraft.level != null) ClientTradeCatalog.advanceFallback(minecraft.level);
-        if (minecraft.screen instanceof MerchantScreen screen) {
-            MerchantMenu menu = screen.getMenu();
-            ClientTradeCatalog.observeOffers(menu.getOffers(), menu.getTraderLevel());
+        if (minecraft.getConnection() == null) {
+            if (minecraft.level != null) ClientTradeCatalog.advanceFallback(minecraft.level);
+            if (minecraft.screen instanceof MerchantScreen screen) {
+                MerchantMenu menu = screen.getMenu();
+                ClientTradeCatalog.observeOffers(menu.getOffers(), menu.getTraderLevel());
+            }
+        } else {
+            ClientTradeCatalog.preferServerCatalog();
         }
         TradeJeiPlugin.refreshRecipes();
     }
