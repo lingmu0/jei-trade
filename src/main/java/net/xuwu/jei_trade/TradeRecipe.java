@@ -202,7 +202,9 @@ public final class TradeRecipe {
     private static void writeVariantList(RegistryFriendlyByteBuf buf, List<ItemStack> variants) {
         buf.writeVarInt(Math.min(variants.size(), MAX_VARIANTS));
         for (int i = 0; i < variants.size() && i < MAX_VARIANTS; i++) {
-            ItemStack.STREAM_CODEC.encode(buf, variants.get(i));
+            ItemStack stack = variants.get(i);
+            buf.writeBoolean(!stack.isEmpty());
+            if (!stack.isEmpty()) ItemStack.STREAM_CODEC.encode(buf, stack);
         }
     }
 
@@ -212,7 +214,9 @@ public final class TradeRecipe {
             throw new IllegalArgumentException("Invalid trade variant count: " + count);
         }
         List<ItemStack> variants = new ArrayList<>(count);
-        for (int i = 0; i < count; i++) variants.add(ItemStack.STREAM_CODEC.decode(buf));
+        for (int i = 0; i < count; i++) {
+            variants.add(buf.readBoolean() ? ItemStack.STREAM_CODEC.decode(buf) : ItemStack.EMPTY);
+        }
         return variants;
     }
 
