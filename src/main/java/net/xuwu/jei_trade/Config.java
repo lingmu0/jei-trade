@@ -19,8 +19,8 @@ public final class Config {
             .defineInRange("maxCatalogEntries", 10000, 100, 100000);
 
     public static final ModConfigSpec.IntValue REBUILD_BUDGET_MICROS = BUILDER
-            .comment("Maximum main-thread time budget per server tick while /jeitrade rebuild is sampling.",
-                    "Minecraft entity and trade callbacks are not thread-safe, so they are advanced in small tick slices.")
+            .comment("Maximum main-thread time budget per server tick while the trade catalog is sampling.",
+                    "Entity and trade callbacks are advanced in small server-thread slices for compatibility with threaded chunk engines.")
             .defineInRange("rebuildBudgetMicros", 1000, 100, 10000);
 
     public static final ModConfigSpec SPEC = BUILDER.build();

@@ -39,10 +39,12 @@ final class TradeListingResolver {
                                ResourceLocation entityType, ResourceLocation profession,
                                List<ResourceLocation> workstations, int level) {
         try {
-            return resolveTyped(world, listing, entityType, profession, workstations, level);
+            TradeRecipe typed = resolveTyped(world, listing, entityType, profession, workstations, level);
+            return typed != null ? typed : MapTradeListingResolver.resolve(
+                    listing, entityType, profession, workstations, level);
         } catch (ReflectiveOperationException | RuntimeException ex) {
             Jei_trade.LOGGER.debug("Could not read typed trade definition {}", listing.getClass(), ex);
-            return null;
+            return MapTradeListingResolver.resolve(listing, entityType, profession, workstations, level);
         }
     }
 
