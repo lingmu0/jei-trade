@@ -18,7 +18,6 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.item.ItemStack;
-import net.xuwu.jei_trade.Jei_trade;
 import net.xuwu.jei_trade.TradeRecipe;
 import net.xuwu.jei_trade.TradeRecipeGroup;
 
@@ -97,8 +96,8 @@ final class TradeRecipeCategory extends AbstractRecipeCategory<TradeRecipeGroup>
     public void draw(TradeRecipeGroup group, IRecipeSlotsView slots, GuiGraphics graphics,
                      double mouseX, double mouseY) {
         Minecraft minecraft = Minecraft.getInstance();
-        int workstationCount = Math.min(group.workstationStacks().size(), 3);
-        int headerSlotCount = workstationCount + (group.sourceSpawnEggStack().isEmpty() ? 0 : 1);
+        int workstationCount = Math.min(group.workstationCount(), 3);
+        int headerSlotCount = workstationCount + (group.hasSourceSpawnEgg() ? 1 : 0);
         int titleX = headerSlotCount == 0 ? 4 : 4 + headerSlotCount * 20 + 3;
         boolean wanderingTrader = group.entityType() != null
                 && "minecraft".equals(group.entityType().getNamespace())
@@ -180,9 +179,4 @@ final class TradeRecipeCategory extends AbstractRecipeCategory<TradeRecipeGroup>
         return Component.translatable("jei_trade.source.merchant");
     }
 
-    @Override
-    public net.minecraft.resources.ResourceLocation getRegistryName(TradeRecipeGroup group) {
-        return net.minecraft.resources.ResourceLocation.fromNamespaceAndPath(Jei_trade.MODID,
-                "trade/" + Integer.toHexString(group.fingerprint().hashCode()));
-    }
 }
