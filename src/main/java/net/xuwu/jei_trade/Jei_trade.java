@@ -16,5 +16,6 @@ public final class Jei_trade {
     public Jei_trade(IEventBus modBus, ModContainer modContainer) {
         TradeNetworking.register(modBus);
         modContainer.registerConfig(ModConfig.Type.SERVER, Config.SPEC);
+        modContainer.registerConfig(ModConfig.Type.CLIENT, Config.CLIENT_SPEC);
     }
 }
