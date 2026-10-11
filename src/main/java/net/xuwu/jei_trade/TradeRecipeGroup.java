@@ -1,10 +1,9 @@
 package net.xuwu.jei_trade;
 
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.SpawnEggItem;
-import net.neoforged.neoforge.common.DeferredSpawnEggItem;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -18,9 +17,9 @@ public final class TradeRecipeGroup {
     public static final int ROWS_PER_PAGE = 6;
 
     private final String groupKey;
-    private final ResourceLocation entityType;
-    private final ResourceLocation profession;
-    private final List<ResourceLocation> workstations;
+    private final Identifier entityType;
+    private final Identifier profession;
+    private final List<Identifier> workstations;
     private final List<TradeRecipe> trades;
     private final int page;
     private final int pageCount;
@@ -29,8 +28,8 @@ public final class TradeRecipeGroup {
     private final ItemStack sourceSpawnEggStack;
     private final String fingerprint;
 
-    private TradeRecipeGroup(String groupKey, ResourceLocation entityType, ResourceLocation profession,
-                             List<ResourceLocation> workstations, List<TradeRecipe> trades,
+    private TradeRecipeGroup(String groupKey, Identifier entityType, Identifier profession,
+                             List<Identifier> workstations, List<TradeRecipe> trades,
                              int page, int pageCount, int totalTrades) {
         this.groupKey = groupKey;
         this.entityType = entityType;
@@ -75,15 +74,15 @@ public final class TradeRecipeGroup {
                 + recipe.workstations();
     }
 
-    public ResourceLocation entityType() {
+    public Identifier entityType() {
         return entityType;
     }
 
-    public ResourceLocation profession() {
+    public Identifier profession() {
         return profession;
     }
 
-    public List<ResourceLocation> workstations() {
+    public List<Identifier> workstations() {
         return workstations;
     }
 
@@ -95,10 +94,10 @@ public final class TradeRecipeGroup {
         return workstationStacks.size();
     }
 
-    private static List<ItemStack> createWorkstationStacks(List<ResourceLocation> workstations) {
+    private static List<ItemStack> createWorkstationStacks(List<Identifier> workstations) {
         List<ItemStack> result = new ArrayList<>();
-        for (ResourceLocation id : workstations) {
-            var block = BuiltInRegistries.BLOCK.get(id);
+        for (Identifier id : workstations) {
+            var block = BuiltInRegistries.BLOCK.getValue(id);
             if (block != null && !block.asItem().equals(net.minecraft.world.item.Items.AIR)) {
                 result.add(new ItemStack(block));
             }
@@ -114,13 +113,11 @@ public final class TradeRecipeGroup {
         return !sourceSpawnEggStack.isEmpty();
     }
 
-    private static ItemStack createSourceSpawnEggStack(ResourceLocation entityType) {
+    private static ItemStack createSourceSpawnEggStack(Identifier entityType) {
         if (entityType == null) return ItemStack.EMPTY;
-        var type = BuiltInRegistries.ENTITY_TYPE.get(entityType);
+        var type = BuiltInRegistries.ENTITY_TYPE.getValue(entityType);
         if (type == null) return ItemStack.EMPTY;
-        SpawnEggItem egg = DeferredSpawnEggItem.deferredOnlyById(type);
-        if (egg == null) egg = SpawnEggItem.byId(type);
-        return egg == null ? ItemStack.EMPTY : new ItemStack(egg);
+        return SpawnEggItem.byId(type).map(ItemStack::new).orElse(ItemStack.EMPTY);
     }
 
     public List<TradeRecipe> trades() {

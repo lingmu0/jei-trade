@@ -22,5 +22,6 @@
   "jei_trade.yes": "是",
   "jei_trade.no": "否",
   "jei_trade.possible": "可能",
-  "jei_trade.unknown": "未知"
+  "jei_trade.unknown": "未知",
+  "jei_trade.detail.conditional_trade": "此交易仅在满足商人条件时可用。"
 }

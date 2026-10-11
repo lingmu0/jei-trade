@@ -1,24 +1,29 @@
 package net.xuwu.jei_trade;
 
-import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 import net.minecraft.core.Holder;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceKey;
-import net.minecraft.resources.ResourceLocation;
-import net.minecraft.tags.EnchantmentTags;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.ai.village.poi.PoiType;
-import net.minecraft.world.entity.npc.VillagerDataHolder;
-import net.minecraft.world.entity.npc.VillagerProfession;
-import net.minecraft.world.entity.npc.VillagerTrades;
-import net.minecraft.world.item.EnchantedBookItem;
+import net.minecraft.world.entity.npc.villager.VillagerDataHolder;
+import net.minecraft.world.entity.npc.villager.VillagerProfession;
+import net.minecraft.world.entity.npc.villager.Villager;
+import net.minecraft.world.entity.EntitySpawnReason;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.item.trading.TradeSet;
+import net.minecraft.world.item.trading.TradeSets;
+import net.minecraft.world.item.trading.VillagerTrade;
+import net.minecraft.world.level.storage.loot.LootContext;
+import net.minecraft.world.level.storage.loot.LootParams;
+import net.minecraft.world.level.storage.loot.parameters.LootContextParams;
+import net.minecraft.world.level.storage.loot.parameters.LootContextParamSets;
+import net.minecraft.util.Unit;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
-import net.minecraft.world.item.enchantment.Enchantment;
-import net.minecraft.world.item.enchantment.EnchantmentInstance;
 import net.minecraft.world.item.trading.Merchant;
 import net.minecraft.world.item.trading.MerchantOffer;
 import net.minecraft.world.item.trading.MerchantOffers;
@@ -33,9 +38,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/** Builds a deterministic catalog from the actual registered villager trade factories. */
+/** Builds a deterministic catalog from the registered datapack trades and actual merchant offers. */
 public final class TradeCatalogBuilder {
-    private static final int UNKNOWN_LISTING_SAMPLES = 1;
+    private static final int UNKNOWN_LISTING_SAMPLES = 100;
     private static final int NORMAL_MERCHANT_ENTITY_SAMPLES = 100;
     private static final int EXTENDED_MERCHANT_ENTITY_SAMPLES = 100;
     private static final int MAX_VARIANTS = 256;
@@ -59,7 +64,7 @@ public final class TradeCatalogBuilder {
 
     private static List<TradeRecipe> buildToCompletion(Session session) {
         while (!session.advance(Long.MAX_VALUE / 2)) {
-            // The worker owns this loop; there is no server-tick budget to observe here.
+            // Explicit synchronous tooling can consume the entire session at once.
         }
         return session.snapshot();
     }
@@ -68,7 +73,7 @@ public final class TradeCatalogBuilder {
         return normalSession(level);
     }
 
-    /** Creates the no-cache mode with one null-entity attempt for each unknown listing. */
+    /** Creates the no-cache mode with datapack definitions and bounded merchant sampling. */
     public static Session nullSamplingSession(Level level) {
         return normalSession(level);
     }
@@ -101,34 +106,28 @@ public final class TradeCatalogBuilder {
         private Session(Level level, boolean extendedCustomSampling) {
             this.level = level;
             this.extendedCustomSampling = extendedCustomSampling;
-            Registry<VillagerProfession> professions = BuiltInRegistries.VILLAGER_PROFESSION;
-            ResourceLocation villagerId = ResourceLocation.fromNamespaceAndPath("minecraft", "villager");
-            for (Map.Entry<VillagerProfession, Int2ObjectMap<VillagerTrades.ItemListing[]>> professionEntry
-                    : VillagerTrades.TRADES.entrySet()) {
-                VillagerProfession profession = professionEntry.getKey();
-                ResourceLocation professionId = professions.getKey(profession);
-                if (professionId == null) continue;
-                List<ResourceLocation> workstations = findWorkstations(level, profession);
-                for (Int2ObjectMap.Entry<VillagerTrades.ItemListing[]> levelEntry
-                        : professionEntry.getValue().int2ObjectEntrySet()) {
-                    int levelNumber = levelEntry.getIntKey();
-                    VillagerTrades.ItemListing[] listings = levelEntry.getValue();
-                    for (int index = 0; index < listings.length; index++) {
-                        listingTasks.add(new ListingTask(listings[index], villagerId, professionId,
-                                workstations, levelNumber));
+            Registry<VillagerProfession> professions = level.registryAccess().lookupOrThrow(Registries.VILLAGER_PROFESSION);
+            Registry<TradeSet> tradeSets = level.registryAccess().lookupOrThrow(Registries.TRADE_SET);
+            Identifier villagerId = Identifier.withDefaultNamespace("villager");
+            for (VillagerProfession profession : professions) {
+                Identifier professionId = professions.getKey(profession);
+                List<Identifier> workstations = findWorkstations(level, profession);
+                for (var entry : profession.tradeSetsByLevel().int2ObjectEntrySet()) {
+                    TradeSet set = tradeSets.getValue(entry.getValue());
+                    if (set == null) continue;
+                    for (Holder<VillagerTrade> trade : set.getTrades()) {
+                        listingTasks.add(new ListingTask(trade.value(), villagerId, professionId,
+                                workstations, entry.getIntKey()));
                     }
                 }
             }
-
-            ResourceLocation wanderingTraderId = ResourceLocation.fromNamespaceAndPath(
-                    "minecraft", "wandering_trader");
-            for (Int2ObjectMap.Entry<VillagerTrades.ItemListing[]> levelEntry
-                    : VillagerTrades.WANDERING_TRADER_TRADES.int2ObjectEntrySet()) {
-                int levelNumber = levelEntry.getIntKey();
-                VillagerTrades.ItemListing[] listings = levelEntry.getValue();
-                for (int index = 0; index < listings.length; index++) {
-                    listingTasks.add(new ListingTask(listings[index], wanderingTraderId, null,
-                            List.of(), levelNumber));
+            Identifier wanderingTraderId = Identifier.withDefaultNamespace("wandering_trader");
+            for (var key : List.of(TradeSets.WANDERING_TRADER_BUYING,
+                    TradeSets.WANDERING_TRADER_UNCOMMON, TradeSets.WANDERING_TRADER_COMMON)) {
+                TradeSet set = tradeSets.getValue(key);
+                if (set == null) continue;
+                for (Holder<VillagerTrade> trade : set.getTrades()) {
+                    listingTasks.add(new ListingTask(trade.value(), wanderingTraderId, null, List.of(), 0));
                 }
             }
 
@@ -177,8 +176,8 @@ public final class TradeCatalogBuilder {
             exactEntries.merge(recipe.fingerprint(), recipe, TradeRecipe::merge);
         }
 
-        private boolean acceptOffer(ResourceLocation entityType, ResourceLocation profession,
-                                    List<ResourceLocation> workstations, int merchantLevel,
+        private boolean acceptOffer(Identifier entityType, Identifier profession,
+                                    List<Identifier> workstations, int merchantLevel,
                                     MerchantOffer offer) {
             String key = TradeRecipe.logicalFingerprint(entityType, profession, workstations, merchantLevel,
                     offer.getCostA(), offer.getCostB(), offer.getResult());
@@ -225,16 +224,17 @@ public final class TradeCatalogBuilder {
     }
 
     private static final class ListingTask {
-        private final VillagerTrades.ItemListing listing;
-        private final ResourceLocation entityType;
-        private final ResourceLocation profession;
-        private final List<ResourceLocation> workstations;
+        private final VillagerTrade listing;
+        private VillagerTrade samplingListing;
+        private final Identifier entityType;
+        private final Identifier profession;
+        private final List<Identifier> workstations;
         private final int level;
         private boolean resolverChecked;
         private int sample;
 
-        private ListingTask(VillagerTrades.ItemListing listing, ResourceLocation entityType,
-                            ResourceLocation profession, List<ResourceLocation> workstations, int level) {
+        private ListingTask(VillagerTrade listing, Identifier entityType,
+                            Identifier profession, List<Identifier> workstations, int level) {
             this.listing = listing;
             this.entityType = entityType;
             this.profession = profession;
@@ -251,17 +251,35 @@ public final class TradeCatalogBuilder {
                     session.mergeExact(exact);
                     return true;
                 }
+                try {
+                    samplingListing = TradeListingResolver.forSampling(session.level, listing);
+                } catch (RuntimeException ex) {
+                    Jei_trade.LOGGER.debug("Could not prepare trade preview {} level {}", profession, level, ex);
+                    return true;
+                }
             }
 
             try {
-                MerchantOffer offer = listing.getOffer(null, null);
-                if (offer != null) {
-                    if (offer.getResult().is(Items.ENCHANTED_BOOK)) {
-                        session.mergeExact(expandEnchantedBookVariants(session.level,
-                                TradeRecipe.fromOffer(entityType, profession, workstations, level, offer)));
-                        return true;
+                ServerLevel world = (ServerLevel) session.level;
+                Entity merchant = entityType.equals(Identifier.withDefaultNamespace("villager"))
+                        ? EntityType.VILLAGER.create(world, EntitySpawnReason.COMMAND)
+                        : EntityType.WANDERING_TRADER.create(world, EntitySpawnReason.COMMAND);
+                if (merchant == null) return true;
+                try {
+                    merchant.setPos(world.getRespawnData().pos().getBottomCenter());
+                    if (merchant instanceof Villager villager) {
+                        var types = world.registryAccess().lookupOrThrow(Registries.VILLAGER_TYPE).listElements().toList();
+                        var professionHolder = world.registryAccess().lookupOrThrow(Registries.VILLAGER_PROFESSION)
+                                .get(profession).orElseThrow();
+                        villager.setVillagerData(villager.getVillagerData().withProfession(professionHolder)
+                                .withLevel(level).withType(types.get(sample % types.size())));
                     }
-                    session.acceptOffer(entityType, profession, workstations, level, offer);
+                    MerchantOffer offer = samplingListing.getOffer(context(world, merchant, sample));
+                    if (offer != null) {
+                        session.acceptOffer(entityType, profession, workstations, level, offer);
+                    }
+                } finally {
+                    merchant.discard();
                 }
             } catch (RuntimeException ex) {
                 Jei_trade.LOGGER.debug("Could not create example trade {} level {}", profession, level, ex);
@@ -285,21 +303,21 @@ public final class TradeCatalogBuilder {
         }
 
         private boolean advance(Session session) {
-            ResourceLocation entityId = BuiltInRegistries.ENTITY_TYPE.getKey(type);
+            Identifier entityId = BuiltInRegistries.ENTITY_TYPE.getKey(type);
             Entity entity = null;
             try {
-                entity = type.create(session.level);
+                entity = type.create(session.level, EntitySpawnReason.COMMAND);
                 if (!(entity instanceof Merchant merchant)) return true;
 
                 MerchantOffers offers = merchant.getOffers();
-                ResourceLocation professionId = null;
-                List<ResourceLocation> workstations = List.of();
+                Identifier professionId = null;
+                List<Identifier> workstations = List.of();
                 int merchantLevel = 0;
                 if (merchant instanceof VillagerDataHolder holder) {
-                    VillagerProfession profession = holder.getVillagerData().getProfession();
-                    professionId = BuiltInRegistries.VILLAGER_PROFESSION.getKey(profession);
+                    VillagerProfession profession = holder.getVillagerData().profession().value();
+                    professionId = session.level.registryAccess().lookupOrThrow(Registries.VILLAGER_PROFESSION).getKey(profession);
                     workstations = findWorkstations(session.level, profession);
-                    merchantLevel = holder.getVillagerData().getLevel();
+                    merchantLevel = holder.getVillagerData().level();
                 }
 
                 if (offers != null) {
@@ -323,9 +341,9 @@ public final class TradeCatalogBuilder {
     }
 
     private static final class TradeAccumulator {
-        private final ResourceLocation entityType;
-        private final ResourceLocation profession;
-        private final List<ResourceLocation> workstations;
+        private final Identifier entityType;
+        private final Identifier profession;
+        private final List<Identifier> workstations;
         private final int level;
         private final Map<String, ItemStack> buyA = new LinkedHashMap<>();
         private final Map<String, ItemStack> buyB = new LinkedHashMap<>();
@@ -344,8 +362,8 @@ public final class TradeCatalogBuilder {
         private int specialPrice;
         private boolean rewardExp;
 
-        private TradeAccumulator(ResourceLocation entityType, ResourceLocation profession,
-                                 List<ResourceLocation> workstations, int level, MerchantOffer offer) {
+        private TradeAccumulator(Identifier entityType, Identifier profession,
+                                 List<Identifier> workstations, int level, MerchantOffer offer) {
             this.entityType = entityType;
             this.profession = profession;
             this.workstations = List.copyOf(workstations);
@@ -413,57 +431,28 @@ public final class TradeCatalogBuilder {
         }
     }
 
-    private static TradeRecipe expandEnchantedBookVariants(Level level, TradeRecipe base) {
-        List<ItemStack> books = new ArrayList<>();
-        int minEmeralds = Integer.MAX_VALUE;
-        int maxEmeralds = 0;
-        Registry<Enchantment> enchantments = level.registryAccess().registryOrThrow(Registries.ENCHANTMENT);
-        for (Map.Entry<ResourceKey<Enchantment>, Enchantment> entry : enchantments.entrySet()) {
-            Holder<Enchantment> holder = enchantments.getHolder(entry.getKey()).orElseThrow();
-            if (!holder.is(EnchantmentTags.TRADEABLE)) continue;
-            Enchantment enchantment = entry.getValue();
-            for (int enchantmentLevel = enchantment.getMinLevel();
-                 enchantmentLevel <= enchantment.getMaxLevel(); enchantmentLevel++) {
-                books.add(EnchantedBookItem.createForEnchantment(
-                        new EnchantmentInstance(holder, enchantmentLevel)));
-                int minCost = 2 + enchantmentLevel * 3;
-                int maxCost = Math.min(64, 6 + enchantmentLevel * 13);
-                if (holder.is(EnchantmentTags.DOUBLE_TRADE_PRICE)) {
-                    minCost = Math.min(64, minCost * 2);
-                    maxCost = Math.min(64, maxCost * 2);
-                }
-                minEmeralds = Math.min(minEmeralds, minCost);
-                maxEmeralds = Math.max(maxEmeralds, maxCost);
-            }
-        }
-        if (books.isEmpty()) return base;
-
-        int buyAMin = base.buyAMin();
-        int buyAMax = base.buyAMax();
-        if (base.buyA().is(Items.EMERALD)) {
-            buyAMin = minEmeralds;
-            buyAMax = maxEmeralds;
-        }
-        return TradeRecipe.fromSamples(base.entityType(), base.profession(), base.workstations(), base.level(),
-                base.buyAVariants(), buyAMin, buyAMax,
-                base.buyBVariants(), base.buyBMin(), base.buyBMax(),
-                books, 1, 1, base.uses(), base.maxUses(), base.xp(), base.priceMultiplier(),
-                base.demand(), base.specialPrice(), base.rewardExp(), base.details());
+    static LootContext context(ServerLevel level, Entity merchant, int sample) {
+        return new LootContext.Builder(new LootParams.Builder(level)
+                .withParameter(LootContextParams.ORIGIN, merchant.position())
+                .withParameter(LootContextParams.THIS_ENTITY, merchant)
+                .withParameter(LootContextParams.ADDITIONAL_COST_COMPONENT_ALLOWED, Unit.INSTANCE)
+                .create(LootContextParamSets.VILLAGER_TRADE))
+                .withOptionalRandomSeed(42L + sample).create(java.util.Optional.empty());
     }
 
-    public static List<ResourceLocation> findWorkstations(Level level, VillagerProfession profession) {
-        Registry<PoiType> poiRegistry = level.registryAccess().registryOrThrow(Registries.POINT_OF_INTEREST_TYPE);
-        Set<ResourceLocation> ids = new LinkedHashSet<>();
+    public static List<Identifier> findWorkstations(Level level, VillagerProfession profession) {
+        Registry<PoiType> poiRegistry = level.registryAccess().lookupOrThrow(Registries.POINT_OF_INTEREST_TYPE);
+        Set<Identifier> ids = new LinkedHashSet<>();
         for (Map.Entry<ResourceKey<PoiType>, PoiType> entry : poiRegistry.entrySet()) {
             ResourceKey<PoiType> key = entry.getKey();
-            var holderOptional = poiRegistry.getHolder(key);
+            var holderOptional = poiRegistry.get(key);
             if (holderOptional.isEmpty()) continue;
             Holder<PoiType> holder = holderOptional.get();
             if (!profession.heldJobSite().test(holder)) continue;
             for (BlockState state : entry.getValue().matchingStates()) {
                 Block block = state.getBlock();
                 if (!block.asItem().equals(Items.AIR)) {
-                    ResourceLocation blockId = BuiltInRegistries.BLOCK.getKey(block);
+                    Identifier blockId = BuiltInRegistries.BLOCK.getKey(block);
                     if (blockId != null) ids.add(blockId);
                 }
             }

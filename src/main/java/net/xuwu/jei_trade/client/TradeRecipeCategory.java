@@ -3,19 +3,20 @@ package net.xuwu.jei_trade.client;
 import mezz.jei.api.gui.builder.IRecipeLayoutBuilder;
 import mezz.jei.api.gui.builder.IRecipeSlotBuilder;
 import mezz.jei.api.gui.drawable.IDrawableStatic;
+import mezz.jei.api.gui.drawable.IDrawable;
 import mezz.jei.api.gui.ingredient.IRecipeSlotsView;
 import mezz.jei.api.helpers.IGuiHelper;
 import mezz.jei.api.recipe.IFocusGroup;
-import mezz.jei.api.recipe.RecipeType;
+import mezz.jei.api.recipe.types.IRecipeType;
 import mezz.jei.api.recipe.category.AbstractRecipeCategory;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.resources.language.ClientLanguage;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.item.ItemStack;
 import net.xuwu.jei_trade.TradeRecipe;
@@ -29,10 +30,9 @@ final class TradeRecipeCategory extends AbstractRecipeCategory<TradeRecipeGroup>
     private static final int CATEGORY_WIDTH = 180;
     private static final int RANGE_MAX_WIDTH = 16;
     private static final float RANGE_MAX_SCALE = 0.65F;
-    private static final float RANGE_Z = 300.0F;
     private final IDrawableStatic arrow;
 
-    TradeRecipeCategory(IGuiHelper guiHelper, RecipeType<TradeRecipeGroup> recipeType) {
+    TradeRecipeCategory(IGuiHelper guiHelper, IRecipeType<TradeRecipeGroup> recipeType) {
         super(recipeType,
                 Component.translatable("jei_trade.category.villager_trade"),
                 guiHelper.createDrawableItemStack(net.minecraft.world.item.Items.EMERALD.getDefaultInstance()),
@@ -47,14 +47,14 @@ final class TradeRecipeCategory extends AbstractRecipeCategory<TradeRecipeGroup>
             if (workstationX > 44) break;
             builder.addInputSlot(workstationX, 4)
                     .setStandardSlotBackground()
-                    .addItemStack(workstation);
+                    .add(workstation);
             workstationX += 20;
         }
         ItemStack spawnEgg = group.sourceSpawnEggStack();
         if (!spawnEgg.isEmpty()) {
             builder.addInputSlot(workstationX, 4)
                     .setStandardSlotBackground()
-                    .addItemStack(spawnEgg);
+                    .add(spawnEgg);
         }
 
         for (int index = 0; index < group.trades().size(); index++) {
@@ -77,6 +77,16 @@ final class TradeRecipeCategory extends AbstractRecipeCategory<TradeRecipeGroup>
     private static void addSlotTooltip(IRecipeSlotBuilder slot, TradeRecipe trade,
                                        List<ItemStack> variants, String countRange,
                                        boolean includeDetails) {
+        if (!countRange.isEmpty()) {
+            slot.setOverlay(new IDrawable() {
+                @Override public int getWidth() { return 18; }
+                @Override public int getHeight() { return 18; }
+                @Override public void draw(GuiGraphicsExtractor graphics, int x, int y) {
+                    graphics.nextStratum();
+                    drawRange(graphics, Minecraft.getInstance().font, countRange, x, y);
+                }
+            }, 0, 0);
+        }
         slot.addRichTooltipCallback((view, tooltip) -> {
             int nbtVariants = trade.nbtVariantCount(variants);
             if (nbtVariants > 1) {
@@ -93,7 +103,7 @@ final class TradeRecipeCategory extends AbstractRecipeCategory<TradeRecipeGroup>
     }
 
     @Override
-    public void draw(TradeRecipeGroup group, IRecipeSlotsView slots, GuiGraphics graphics,
+    public void draw(TradeRecipeGroup group, IRecipeSlotsView slots, GuiGraphicsExtractor graphics,
                      double mouseX, double mouseY) {
         Minecraft minecraft = Minecraft.getInstance();
         int workstationCount = Math.min(group.workstationCount(), 3);
@@ -108,11 +118,11 @@ final class TradeRecipeCategory extends AbstractRecipeCategory<TradeRecipeGroup>
                 ? merchantName(group.entityType()).getString()
                 : Component.translatable("jei_trade.source.profession", professionName(group.profession())).getString();
         source = minecraft.font.plainSubstrByWidth(source, CATEGORY_WIDTH - titleX - 4);
-        graphics.drawString(minecraft.font, source, titleX, 7, 0x404040, false);
+        graphics.text(minecraft.font, source, titleX, 7, 0xFF404040, false);
         if (group.pageCount() > 1) {
             String page = Component.translatable("jei_trade.page", group.page(), group.pageCount()).getString();
-            graphics.drawString(minecraft.font, page, CATEGORY_WIDTH - minecraft.font.width(page) - 4,
-                    18, 0x606060, false);
+            graphics.text(minecraft.font, page, CATEGORY_WIDTH - minecraft.font.width(page) - 4,
+                    18, 0xFF606060, false);
         }
 
         for (int index = 0; index < group.trades().size(); index++) {
@@ -120,33 +130,32 @@ final class TradeRecipeCategory extends AbstractRecipeCategory<TradeRecipeGroup>
             int y = HEADER_HEIGHT + index * ROW_HEIGHT;
             arrow.draw(graphics, 57, y);
             String level = Component.translatable("jei_trade.level", trade.level()).getString();
-            graphics.drawString(minecraft.font, level, 120, y + 2, 0x404040, false);
-            graphics.drawString(minecraft.font,
+            graphics.text(minecraft.font, level, 120, y + 2, 0xFF404040, false);
+            graphics.text(minecraft.font,
                     Component.translatable("jei_trade.max_uses", trade.maxUses()), 120, y + 12,
-                    0x606060, false);
-            drawRange(graphics, minecraft.font, trade.buyACountRange(), 4, y);
-            drawRange(graphics, minecraft.font, trade.buyBCountRange(), 27, y);
-            drawRange(graphics, minecraft.font, trade.resultCountRange(), 91, y);
+                    0xFF606060, false);
         }
     }
 
-    private static void drawRange(GuiGraphics graphics, Font font, String range, int x, int y) {
+    private static void drawRange(GuiGraphicsExtractor graphics, Font font, String range, int x, int y) {
         if (!range.isEmpty()) {
             int width = font.width(range);
             float scale = Math.min(RANGE_MAX_SCALE, RANGE_MAX_WIDTH / (float) Math.max(1, width));
-            graphics.pose().pushPose();
-            graphics.pose().translate(x + 18.0F, y + 18.0F, RANGE_Z);
-            graphics.pose().scale(scale, scale, 1.0F);
-            graphics.drawString(font, range, -width, -font.lineHeight, 0xFFFFFFFF, true);
-            graphics.pose().popPose();
+            graphics.pose().pushMatrix();
+            graphics.pose().translate(x + 18.0F, y + 18.0F);
+            graphics.pose().scale(scale, scale);
+            graphics.text(font, range, -width, -font.lineHeight, 0xFFFFFFFF, true);
+            graphics.pose().popMatrix();
         }
     }
 
-    private static Component professionName(ResourceLocation profession) {
-        var professionValue = BuiltInRegistries.VILLAGER_PROFESSION.get(profession);
-        if (professionValue != null) {
-            String vanillaKey = "entity.minecraft.villager." + professionValue.name();
-            if (ClientLanguage.getInstance().has(vanillaKey)) return Component.translatable(vanillaKey);
+    private static Component professionName(Identifier profession) {
+        var minecraft = Minecraft.getInstance();
+        if (minecraft.level != null) {
+            var value = minecraft.level.registryAccess()
+                    .lookupOrThrow(net.minecraft.core.registries.Registries.VILLAGER_PROFESSION)
+                    .getValue(profession);
+            if (value != null) return value.name();
         }
         for (String key : professionTranslationKeys(profession)) {
             if (ClientLanguage.getInstance().has(key)) return Component.translatable(key);
@@ -155,7 +164,7 @@ final class TradeRecipeCategory extends AbstractRecipeCategory<TradeRecipeGroup>
         return Component.literal(profession.toString());
     }
 
-    private static List<String> professionTranslationKeys(ResourceLocation profession) {
+    private static List<String> professionTranslationKeys(Identifier profession) {
         String namespace = profession.getNamespace();
         String path = profession.getPath();
         return List.of(
@@ -169,9 +178,9 @@ final class TradeRecipeCategory extends AbstractRecipeCategory<TradeRecipeGroup>
         );
     }
 
-    private static Component merchantName(ResourceLocation entityType) {
+    private static Component merchantName(Identifier entityType) {
         if (entityType != null) {
-            EntityType<?> type = BuiltInRegistries.ENTITY_TYPE.get(entityType);
+            EntityType<?> type = BuiltInRegistries.ENTITY_TYPE.getValue(entityType);
             if (type != null && ClientLanguage.getInstance().has(type.getDescriptionId())) {
                 return Component.translatable(type.getDescriptionId());
             }

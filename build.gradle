@@ -1,7 +1,7 @@
 plugins {
     id 'java-library'
     id 'maven-publish'
-    id 'net.neoforged.moddev' version '2.0.143'
+    id 'net.neoforged.moddev' version '2.0.148'
 }
 
 group = mod_group_id
@@ -12,7 +12,7 @@ base {
 }
 
 java {
-    toolchain.languageVersion = JavaLanguageVersion.of(21)
+    toolchain.languageVersion = JavaLanguageVersion.of(25)
     withSourcesJar()
 }
 
@@ -30,7 +30,7 @@ neoForge {
             programArguments.addAll('--nogui')
         }
         data {
-            data()
+            clientData()
             gameDirectory = project.file('run-data')
             programArguments.addAll('--mod', mod_id, '--all',
                     '--output', file('src/generated/resources/').absolutePath,
@@ -49,10 +49,14 @@ repositories {
     maven { url = 'https://maven.blamejared.com' }
 }
 
+configurations {
+    runtimeClasspath.extendsFrom localRuntime
+}
+
 dependencies {
-    compileOnly "mezz.jei:jei-1.21.1-common-api:${jei_version}"
-    compileOnly "mezz.jei:jei-1.21.1-neoforge-api:${jei_version}"
-    runtimeOnly "mezz.jei:jei-1.21.1-neoforge:${jei_version}"
+    compileOnly "mezz.jei:jei-26.1.2-common-api:${jei_version}"
+    compileOnly "mezz.jei:jei-26.1.2-neoforge-api:${jei_version}"
+    localRuntime "mezz.jei:jei-26.1.2-neoforge:${jei_version}"
 }
 
 tasks.withType(JavaCompile).configureEach {

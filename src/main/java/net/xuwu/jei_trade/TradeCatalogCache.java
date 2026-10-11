@@ -11,7 +11,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /** Versioned, global binary cache for the completed synchronized trade catalog. */
@@ -20,7 +22,7 @@ final class TradeCatalogCache {
     private static final int FORMAT_VERSION = 3;
     private static final int MAX_RECIPES = 100_000;
     private static final long MAX_CACHE_BYTES = 256L * 1024L * 1024L;
-    private static final String CACHE_FILE = "trade_catalog-1.21.1.bin";
+    private static final String CACHE_FILE = "trade_catalog-26.1.2.bin";
 
     private TradeCatalogCache() {
     }
@@ -91,5 +93,40 @@ final class TradeCatalogCache {
         } finally {
             Files.deleteIfExists(temporary);
         }
+    }
+
+    /** Adds newly observed trades to an existing cache without creating a cache on normal startup. */
+    static boolean mergeAndSaveIfPresent(Path path, List<TradeRecipe> additions,
+                                         RegistryAccess registryAccess) throws IOException {
+        Optional<List<TradeRecipe>> cached = load(path, registryAccess);
+        if (cached.isEmpty()) return false;
+
+        Map<String, TradeRecipe> merged = new LinkedHashMap<>();
+        for (TradeRecipe recipe : cached.get()) {
+            TradeRecipe previous = merged.get(recipe.fingerprint());
+            merged.put(recipe.fingerprint(), previous == null
+                    ? recipe : TradeRecipe.merge(previous, recipe));
+        }
+
+        boolean changed = false;
+        for (TradeRecipe recipe : additions) {
+            String fingerprint = recipe.fingerprint();
+            TradeRecipe previous = merged.get(fingerprint);
+            if (previous == null) {
+                if (merged.size() >= MAX_RECIPES) continue;
+                merged.put(fingerprint, recipe);
+                changed = true;
+                continue;
+            }
+
+            TradeRecipe updated = TradeRecipe.merge(previous, recipe);
+            if (updated != previous) {
+                merged.put(fingerprint, updated);
+                changed = true;
+            }
+        }
+
+        if (changed) save(path, new ArrayList<>(merged.values()), registryAccess);
+        return changed;
     }
 }

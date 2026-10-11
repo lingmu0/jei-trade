@@ -1,6 +1,6 @@
 package net.xuwu.jei_trade;
 
-import net.minecraft.world.entity.npc.VillagerDataHolder;
+import net.minecraft.world.entity.npc.villager.VillagerDataHolder;
 import net.minecraft.world.item.trading.Merchant;
 import net.minecraft.world.item.trading.MerchantOffer;
 import net.minecraft.world.item.trading.MerchantOffers;
@@ -35,14 +35,14 @@ public final class ClientTradeCatalog {
 
     public static synchronized void observeMerchant(Merchant merchant, int level) {
         if (merchant == null || merchant.getOffers() == null) return;
-        net.minecraft.resources.ResourceLocation entityId = null;
-        net.minecraft.resources.ResourceLocation professionId = null;
-        List<net.minecraft.resources.ResourceLocation> workstations = List.of();
+        net.minecraft.resources.Identifier entityId = null;
+        net.minecraft.resources.Identifier professionId = null;
+        List<net.minecraft.resources.Identifier> workstations = List.of();
         if (merchant instanceof net.minecraft.world.entity.Entity entity) {
             entityId = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType());
             if (merchant instanceof VillagerDataHolder holder) {
-                var profession = holder.getVillagerData().getProfession();
-                professionId = net.minecraft.core.registries.BuiltInRegistries.VILLAGER_PROFESSION.getKey(profession);
+                var profession = holder.getVillagerData().profession().value();
+                professionId = holder.getVillagerData().profession().unwrapKey().orElseThrow().identifier();
                 if (entity.level() != null) workstations = TradeCatalogBuilder.findWorkstations(entity.level(), profession);
             }
         }

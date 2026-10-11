@@ -1,5 +1,3 @@
-modLoader = "javafml"
-loaderVersion = "${loader_version_range}"
 license = "${mod_license}"
 
 [[mods]]
@@ -26,6 +24,6 @@ side = "BOTH"
 [[dependencies."${mod_id}"]]
 modId = "jei"
 type = "optional"
-versionRange = "[19.25,20)"
+versionRange = "[29.43,30)"
 ordering = "AFTER"
 side = "CLIENT"

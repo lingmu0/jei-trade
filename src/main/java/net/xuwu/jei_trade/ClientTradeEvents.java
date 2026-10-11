@@ -10,7 +10,7 @@ import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.xuwu.jei_trade.client.TradeJeiPlugin;
 
-@EventBusSubscriber(modid = Jei_trade.MODID, bus = EventBusSubscriber.Bus.GAME, value = Dist.CLIENT)
+@EventBusSubscriber(modid = Jei_trade.MODID, value = Dist.CLIENT)
 public final class ClientTradeEvents {
     private ClientTradeEvents() {
     }
@@ -22,7 +22,9 @@ public final class ClientTradeEvents {
             MerchantMenu menu = screen.getMenu();
             ClientTradeCatalog.observeOffers(menu.getOffers(), menu.getTraderLevel());
         }
-        TradeJeiPlugin.refreshRecipes();
+        if (net.neoforged.fml.ModList.get().isLoaded("jei")) {
+            TradeJeiPlugin.refreshRecipes();
+        }
     }
 
     @SubscribeEvent

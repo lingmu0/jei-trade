@@ -3,7 +3,7 @@ package net.xuwu.jei_trade;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 import java.util.ArrayList;
@@ -12,7 +12,7 @@ import java.util.List;
 /** Server-to-client payload containing the complete synchronized trade catalog. */
 public final class TradeSyncPacket implements CustomPacketPayload {
     public static final Type<TradeSyncPacket> TYPE = new Type<>(
-            ResourceLocation.fromNamespaceAndPath(Jei_trade.MODID, "trade_catalog"));
+            Identifier.fromNamespaceAndPath(Jei_trade.MODID, "trade_catalog"));
     public static final StreamCodec<RegistryFriendlyByteBuf, TradeSyncPacket> STREAM_CODEC =
             StreamCodec.of(TradeSyncPacket::write, TradeSyncPacket::read);
 

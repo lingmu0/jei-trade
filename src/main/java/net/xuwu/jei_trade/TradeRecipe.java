@@ -4,7 +4,7 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.ComponentSerialization;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.trading.MerchantOffer;
 
@@ -18,9 +18,9 @@ import java.util.Objects;
 public final class TradeRecipe {
     private static final int MAX_VARIANTS = 256;
 
-    private final ResourceLocation entityType;
-    private final ResourceLocation profession;
-    private final List<ResourceLocation> workstations;
+    private final Identifier entityType;
+    private final Identifier profession;
+    private final List<Identifier> workstations;
     private final int level;
     private final List<ItemStack> buyAVariants;
     private final List<ItemStack> buyBVariants;
@@ -41,8 +41,8 @@ public final class TradeRecipe {
     private final List<Component> details;
     private final String fingerprint;
 
-    public TradeRecipe(ResourceLocation entityType, ResourceLocation profession,
-                       List<ResourceLocation> workstations, int level,
+    public TradeRecipe(Identifier entityType, Identifier profession,
+                       List<Identifier> workstations, int level,
                        ItemStack buyA, ItemStack buyB, ItemStack result,
                        int uses, int maxUses, int xp, float priceMultiplier,
                        int demand, int specialPrice, boolean rewardExp) {
@@ -52,8 +52,8 @@ public final class TradeRecipe {
                 uses, maxUses, xp, priceMultiplier, demand, specialPrice, rewardExp);
     }
 
-    private TradeRecipe(ResourceLocation entityType, ResourceLocation profession,
-                        List<ResourceLocation> workstations, int level,
+    private TradeRecipe(Identifier entityType, Identifier profession,
+                        List<Identifier> workstations, int level,
                         List<ItemStack> buyAVariants, List<ItemStack> buyBVariants,
                         List<ItemStack> resultVariants,
                         int buyAMin, int buyAMax, int buyBMin, int buyBMax,
@@ -65,8 +65,8 @@ public final class TradeRecipe {
                 uses, maxUses, xp, priceMultiplier, demand, specialPrice, rewardExp, List.of());
     }
 
-    private TradeRecipe(ResourceLocation entityType, ResourceLocation profession,
-                        List<ResourceLocation> workstations, int level,
+    private TradeRecipe(Identifier entityType, Identifier profession,
+                        List<Identifier> workstations, int level,
                         List<ItemStack> buyAVariants, List<ItemStack> buyBVariants,
                         List<ItemStack> resultVariants,
                         int buyAMin, int buyAMax, int buyBMin, int buyBMax,
@@ -98,8 +98,8 @@ public final class TradeRecipe {
                 this.buyAVariants.get(0), this.buyBVariants.get(0), this.resultVariants.get(0));
     }
 
-    public static TradeRecipe fromOffer(ResourceLocation entityType, ResourceLocation profession,
-                                        List<ResourceLocation> workstations, int level,
+    public static TradeRecipe fromOffer(Identifier entityType, Identifier profession,
+                                        List<Identifier> workstations, int level,
                                         MerchantOffer offer) {
         return new TradeRecipe(entityType, profession, workstations, level,
                 offer.getCostA(), offer.getCostB(), offer.getResult(),
@@ -108,8 +108,8 @@ public final class TradeRecipe {
                 offer.shouldRewardExp());
     }
 
-    public static TradeRecipe fromDefinition(ResourceLocation entityType, ResourceLocation profession,
-                                              List<ResourceLocation> workstations, int level,
+    public static TradeRecipe fromDefinition(Identifier entityType, Identifier profession,
+                                              List<Identifier> workstations, int level,
                                               List<ItemStack> buyAVariants, int buyAMin, int buyAMax,
                                               List<ItemStack> buyBVariants, int buyBMin, int buyBMax,
                                               List<ItemStack> resultVariants, int resultMin, int resultMax,
@@ -122,8 +122,8 @@ public final class TradeRecipe {
     }
 
     /** Builds one immutable recipe after a sampling accumulator has finished collecting variants. */
-    static TradeRecipe fromSamples(ResourceLocation entityType, ResourceLocation profession,
-                                   List<ResourceLocation> workstations, int level,
+    static TradeRecipe fromSamples(Identifier entityType, Identifier profession,
+                                   List<Identifier> workstations, int level,
                                    List<ItemStack> buyAVariants, int buyAMin, int buyAMax,
                                    List<ItemStack> buyBVariants, int buyBMin, int buyBMax,
                                    List<ItemStack> resultVariants, int resultMin, int resultMax,
@@ -176,14 +176,14 @@ public final class TradeRecipe {
     }
 
     public static TradeRecipe read(RegistryFriendlyByteBuf buf) {
-        ResourceLocation entityType = readOptionalLocation(buf);
-        ResourceLocation profession = readOptionalLocation(buf);
+        Identifier entityType = readOptionalLocation(buf);
+        Identifier profession = readOptionalLocation(buf);
         int workstationCount = buf.readVarInt();
         if (workstationCount < 0 || workstationCount > MAX_VARIANTS) {
             throw new IllegalArgumentException("Invalid workstation count: " + workstationCount);
         }
-        List<ResourceLocation> workstations = new ArrayList<>(workstationCount);
-        for (int i = 0; i < workstationCount; i++) workstations.add(buf.readResourceLocation());
+        List<Identifier> workstations = new ArrayList<>(workstationCount);
+        for (int i = 0; i < workstationCount; i++) workstations.add(buf.readIdentifier());
         int level = buf.readVarInt();
         List<ItemStack> buyA = readVariantList(buf);
         List<ItemStack> buyB = readVariantList(buf);
@@ -210,7 +210,7 @@ public final class TradeRecipe {
         writeOptionalLocation(buf, entityType);
         writeOptionalLocation(buf, profession);
         buf.writeVarInt(workstations.size());
-        workstations.forEach(buf::writeResourceLocation);
+        workstations.forEach(buf::writeIdentifier);
         buf.writeVarInt(level);
         writeVariantList(buf, buyAVariants);
         writeVariantList(buf, buyBVariants);
@@ -253,13 +253,13 @@ public final class TradeRecipe {
         return variants;
     }
 
-    private static void writeOptionalLocation(RegistryFriendlyByteBuf buf, ResourceLocation location) {
+    private static void writeOptionalLocation(RegistryFriendlyByteBuf buf, Identifier location) {
         buf.writeBoolean(location != null);
-        if (location != null) buf.writeResourceLocation(location);
+        if (location != null) buf.writeIdentifier(location);
     }
 
-    private static ResourceLocation readOptionalLocation(RegistryFriendlyByteBuf buf) {
-        return buf.readBoolean() ? buf.readResourceLocation() : null;
+    private static Identifier readOptionalLocation(RegistryFriendlyByteBuf buf) {
+        return buf.readBoolean() ? buf.readIdentifier() : null;
     }
 
     private static List<ItemStack> union(List<ItemStack> left, List<ItemStack> right) {
@@ -281,9 +281,9 @@ public final class TradeRecipe {
         return stack == null ? ItemStack.EMPTY : stack.copy();
     }
 
-    public ResourceLocation entityType() { return entityType; }
-    public ResourceLocation profession() { return profession; }
-    public List<ResourceLocation> workstations() { return workstations; }
+    public Identifier entityType() { return entityType; }
+    public Identifier profession() { return profession; }
+    public List<Identifier> workstations() { return workstations; }
     public int level() { return level; }
     public ItemStack buyA() { return copy(buyAVariants.get(0)); }
     public ItemStack buyB() { return copy(buyBVariants.get(0)); }
@@ -318,7 +318,7 @@ public final class TradeRecipe {
 
     public ItemStack workstationStack() {
         if (workstations.isEmpty()) return ItemStack.EMPTY;
-        net.minecraft.world.level.block.Block block = BuiltInRegistries.BLOCK.get(workstations.get(0));
+        net.minecraft.world.level.block.Block block = BuiltInRegistries.BLOCK.getValue(workstations.get(0));
         return block == null ? ItemStack.EMPTY : new ItemStack(block);
     }
 
@@ -337,8 +337,8 @@ public final class TradeRecipe {
     }
 
     private boolean workstationMatches(ItemStack stack) {
-        for (ResourceLocation id : workstations) {
-            net.minecraft.world.level.block.Block block = BuiltInRegistries.BLOCK.get(id);
+        for (Identifier id : workstations) {
+            net.minecraft.world.level.block.Block block = BuiltInRegistries.BLOCK.getValue(id);
             if (block != null && stack.is(block.asItem())) return true;
         }
         return false;
@@ -348,8 +348,8 @@ public final class TradeRecipe {
         return fingerprint;
     }
 
-    static String logicalFingerprint(ResourceLocation entityType, ResourceLocation profession,
-                                     List<ResourceLocation> workstations, int level,
+    static String logicalFingerprint(Identifier entityType, Identifier profession,
+                                     List<Identifier> workstations, int level,
                                      ItemStack buyA, ItemStack buyB, ItemStack result) {
         return Objects.toString(entityType, "") + '|' + Objects.toString(profession, "") + '|'
                 + workstations + '|' + level + '|'
@@ -399,7 +399,7 @@ public final class TradeRecipe {
     }
 
     static String stackFingerprintIgnoringCount(ItemStack stack) {
-        ResourceLocation itemId = BuiltInRegistries.ITEM.getKey(stack.getItem());
+        Identifier itemId = BuiltInRegistries.ITEM.getKey(stack.getItem());
         return itemId + ":" + stack.getComponents();
     }
 
@@ -408,7 +408,7 @@ public final class TradeRecipe {
     }
 
     private static String stackFingerprint(ItemStack stack) {
-        ResourceLocation itemId = BuiltInRegistries.ITEM.getKey(stack.getItem());
+        Identifier itemId = BuiltInRegistries.ITEM.getKey(stack.getItem());
         return itemId + ":" + stack.getCount() + ":" + stack.getComponents();
     }
 }

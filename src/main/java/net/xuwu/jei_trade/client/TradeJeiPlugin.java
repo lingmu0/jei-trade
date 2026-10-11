@@ -5,9 +5,9 @@ import mezz.jei.api.JeiPlugin;
 import mezz.jei.api.registration.IRecipeCategoryRegistration;
 import mezz.jei.api.registration.IRecipeRegistration;
 import mezz.jei.api.recipe.IRecipeManager;
-import mezz.jei.api.recipe.RecipeType;
+import mezz.jei.api.recipe.types.IRecipeType;
 import mezz.jei.api.runtime.IJeiRuntime;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.xuwu.jei_trade.ClientTradeCatalog;
 import net.xuwu.jei_trade.Config;
 import net.xuwu.jei_trade.Jei_trade;
@@ -20,15 +20,15 @@ import java.util.stream.Collectors;
 
 @JeiPlugin
 public final class TradeJeiPlugin implements IModPlugin {
-    public static final RecipeType<TradeRecipeGroup> TRADE_RECIPE_TYPE = RecipeType.create(
+    public static final IRecipeType<TradeRecipeGroup> TRADE_RECIPE_TYPE = IRecipeType.create(
             Jei_trade.MODID, "villager_trade", TradeRecipeGroup.class);
     private static final Map<String, TradeRecipeGroup> REGISTERED_RECIPE_GROUPS = new HashMap<>();
     private static IRecipeManager recipeManager;
     private static long lastCatalogRevision = Long.MIN_VALUE;
 
     @Override
-    public ResourceLocation getPluginUid() {
-        return ResourceLocation.fromNamespaceAndPath(Jei_trade.MODID, "jei_plugin");
+    public Identifier getPluginUid() {
+        return Identifier.fromNamespaceAndPath(Jei_trade.MODID, "jei_plugin");
     }
 
     @Override
@@ -95,11 +95,11 @@ public final class TradeJeiPlugin implements IModPlugin {
     }
 
     private static void hideTradeCategories(IRecipeManager manager, String namespace) {
-        List<? extends RecipeType<?>> recipeTypes = manager.createRecipeCategoryLookup()
+        List<? extends IRecipeType<?>> recipeTypes = manager.createRecipeCategoryLookup()
                 .includeHidden()
                 .get()
                 .filter(category -> {
-                    ResourceLocation uid = category.getRecipeType().getUid();
+                    Identifier uid = category.getRecipeType().getUid();
                     return namespace.equals(uid.getNamespace()) && isVillagerTradePath(uid.getPath());
                 })
                 .map(category -> category.getRecipeType())

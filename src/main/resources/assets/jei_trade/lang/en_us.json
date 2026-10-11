@@ -22,5 +22,6 @@
   "jei_trade.yes": "Yes",
   "jei_trade.no": "No",
   "jei_trade.possible": "Possible",
-  "jei_trade.unknown": "Unknown"
+  "jei_trade.unknown": "Unknown",
+  "jei_trade.detail.conditional_trade": "This trade is available only when its merchant conditions are met."
 }

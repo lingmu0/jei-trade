@@ -1,284 +1,242 @@
 package net.xuwu.jei_trade;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.mojang.serialization.JsonOps;
 import net.minecraft.core.Holder;
-import net.minecraft.core.Registry;
-import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.core.registries.Registries;
+import net.minecraft.core.RegistryCodecs;
 import net.minecraft.core.component.DataComponents;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
-import net.minecraft.tags.TagKey;
-import net.minecraft.tags.EnchantmentTags;
-import net.minecraft.world.entity.npc.VillagerTrades;
-import net.minecraft.world.item.EnchantedBookItem;
+import net.minecraft.resources.Identifier;
+import net.minecraft.resources.RegistryOps;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntitySpawnReason;
+import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.ItemStackTemplate;
 import net.minecraft.world.item.Items;
-import net.minecraft.world.item.component.SuspiciousStewEffects;
 import net.minecraft.world.item.enchantment.Enchantment;
-import net.minecraft.world.item.enchantment.EnchantmentHelper;
-import net.minecraft.world.item.enchantment.EnchantmentInstance;
 import net.minecraft.world.item.trading.ItemCost;
+import net.minecraft.world.item.trading.TradeCost;
+import net.minecraft.world.item.trading.VillagerTrade;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.storage.loot.functions.LootItemFunctions;
 
-import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
-import java.util.Optional;
 
-/**
- * Reads the vanilla 1.21.1 trade factories as typed definitions, following
- * Advanced Loot Info's approach. Unknown and third-party factories still use
- * the sampler in {@link TradeCatalogBuilder}.
- */
+/** Reads the registered datapack definition without generating exploration maps or world chunks. */
 final class TradeListingResolver {
-    private TradeListingResolver() {
-    }
+    private TradeListingResolver() {}
 
-    static TradeRecipe resolve(Level world, VillagerTrades.ItemListing listing,
-                               ResourceLocation entityType, ResourceLocation profession,
-                               List<ResourceLocation> workstations, int level) {
+    static TradeRecipe resolve(Level level, VillagerTrade trade, Identifier entityType,
+                               Identifier profession, List<Identifier> workstations, int merchantLevel) {
         try {
-            TradeRecipe typed = resolveTyped(world, listing, entityType, profession, workstations, level);
-            return typed != null ? typed : MapTradeListingResolver.resolve(
-                    listing, entityType, profession, workstations, level);
-        } catch (ReflectiveOperationException | RuntimeException ex) {
-            Jei_trade.LOGGER.debug("Could not read typed trade definition {}", listing.getClass(), ex);
-            return MapTradeListingResolver.resolve(listing, entityType, profession, workstations, level);
+            var ops = RegistryOps.create(JsonOps.INSTANCE, level.registryAccess());
+            JsonObject json = VillagerTrade.CODEC.encodeStart(ops, trade).getOrThrow().getAsJsonObject();
+            JsonArray modifiers = json.has("given_item_modifiers")
+                    ? json.getAsJsonArray("given_item_modifiers") : new JsonArray();
+            boolean map = containsFunction(modifiers, "minecraft:exploration_map");
+            boolean book = (modifiers.size() == 1
+                    || modifiers.size() == 2 && isPreviewGuard(modifiers.get(1), "minecraft:stored_enchantments"))
+                    && isFunction(modifiers.get(0), "minecraft:enchant_randomly")
+                    && !modifiers.get(0).getAsJsonObject().has("conditions");
+            if (!map && !book && !modifiers.isEmpty()) return null;
+
+            TradeCost wants = TradeCost.CODEC.parse(ops, json.get("wants")).getOrThrow();
+            TradeCost additional = json.has("additional_wants")
+                    ? TradeCost.CODEC.parse(ops, json.get("additional_wants")).getOrThrow() : null;
+            ItemStack output = ItemStackTemplate.CODEC.parse(ops, json.get("gives")).getOrThrow().create();
+            int[] countA = range(json.getAsJsonObject("wants").get("count"), 1);
+            int[] countB = additional == null ? new int[]{0, 0}
+                    : range(json.getAsJsonObject("additional_wants").get("count"), 1);
+            if (countA == null || countB == null) return null;
+            List<ItemStack> outputs = new ArrayList<>();
+            List<Component> details = new ArrayList<>();
+            if (json.has("merchant_predicate")) {
+                details.add(Component.translatable("jei_trade.detail.conditional_trade"));
+            }
+            if (book) {
+                if (!output.is(Items.BOOK) && !output.is(Items.ENCHANTED_BOOK)) return null;
+                JsonObject enchant = modifiers.get(0).getAsJsonObject();
+                var registry = level.registryAccess().lookupOrThrow(Registries.ENCHANTMENT);
+                List<Holder<Enchantment>> enchantments = enchant.has("options")
+                        ? RegistryCodecs.homogeneousList(Registries.ENCHANTMENT)
+                            .parse(ops, enchant.get("options")).getOrThrow().stream().toList()
+                        : registry.listElements().map(h -> (Holder<Enchantment>) h).toList();
+                var doubles = json.has("double_trade_price_enchantments")
+                        ? RegistryCodecs.homogeneousList(Registries.ENCHANTMENT)
+                            .parse(ops, json.get("double_trade_price_enchantments")).getOrThrow()
+                        : null;
+                boolean extraCost = enchant.has("include_additional_cost_component")
+                        && enchant.get("include_additional_cost_component").getAsBoolean();
+                int minExtra = Integer.MAX_VALUE;
+                int maxExtra = 0;
+                boolean onlyCompatible = !enchant.has("only_compatible")
+                        || enchant.get("only_compatible").getAsBoolean();
+                for (Holder<Enchantment> holder : enchantments) {
+                    if (!output.is(Items.BOOK) && onlyCompatible && !output.supportsEnchantment(holder)) continue;
+                    for (int n = holder.value().getMinLevel(); n <= holder.value().getMaxLevel(); n++) {
+                        ItemStack enchanted = new ItemStack(Items.ENCHANTED_BOOK);
+                        enchanted.applyComponents(output.getComponentsPatch());
+                        enchanted.enchant(holder, n);
+                        if (outputs.size() < 256) outputs.add(enchanted);
+                        int multiplier = doubles != null && doubles.contains(holder) ? 2 : 1;
+                        minExtra = Math.min(minExtra, (2 + 3 * n) * multiplier);
+                        maxExtra = Math.max(maxExtra, (6 + 13 * n) * multiplier);
+                    }
+                }
+                if (outputs.isEmpty()) return null;
+                if (extraCost) {
+                    countA[0] += minExtra;
+                    countA[1] += maxExtra;
+                }
+                details.add(Component.translatable("jei_trade.detail.random_book_enchant"));
+            } else if (map) {
+                // Apply names/components, but replace exploration functions before evaluating them.
+                ServerLevel world = (ServerLevel) level;
+                Entity merchant = EntityType.WANDERING_TRADER.create(world, EntitySpawnReason.COMMAND);
+                if (merchant == null) return null;
+                try {
+                    var context = TradeCatalogBuilder.context(world, merchant, 0);
+                    for (JsonElement modifier : modifiers) {
+                        output = LootItemFunctions.ROOT_CODEC.parse(ops, withoutMapSearch(modifier))
+                                .getOrThrow().apply(output, context);
+                    }
+                } finally {
+                    merchant.discard();
+                }
+                if (output.isEmpty()) return null;
+                ItemStack mapStack = new ItemStack(Items.FILLED_MAP, output.getCount());
+                mapStack.applyComponents(output.getComponentsPatch());
+                outputs.add(mapStack);
+                Component name = mapStack.get(DataComponents.ITEM_NAME);
+                details.add(Component.translatable("jei_trade.detail.treasure_map",
+                        name == null ? mapStack.getHoverName() : name));
+            } else {
+                outputs.add(output);
+            }
+            int maxA = wants.item().value().getDefaultMaxStackSize();
+            countA[0] = Math.clamp(countA[0], 1, maxA);
+            countA[1] = Math.clamp(countA[1], countA[0], maxA);
+            if (additional != null) {
+                int maxB = additional.item().value().getDefaultMaxStackSize();
+                countB[0] = Math.clamp(countB[0], 1, maxB);
+                countB[1] = Math.clamp(countB[1], countB[0], maxB);
+            }
+            int[] uses = range(json.get("max_uses"), 4);
+            int[] xp = range(json.get("xp"), 1);
+            if (uses == null || xp == null) return null;
+            JsonElement discount = json.get("reputation_discount");
+            if (discount != null && !discount.isJsonPrimitive()) return null;
+            float multiplier = discount == null ? 0 : discount.getAsFloat();
+            ItemStack costA = new ItemCost(wants.item(), countA[0], wants.components()).itemStack();
+            ItemStack costB = additional == null ? ItemStack.EMPTY
+                    : new ItemCost(additional.item(), countB[0], additional.components()).itemStack();
+            return TradeRecipe.fromDefinition(entityType, profession, workstations, merchantLevel,
+                    List.of(costA), countA[0], countA[1], List.of(costB), countB[0], countB[1],
+                    outputs, output.getCount(), output.getCount(), uses[1], xp[1], multiplier, details);
+        } catch (RuntimeException ex) {
+            Jei_trade.LOGGER.debug("Could not read datapack trade definition", ex);
+            return null;
         }
     }
 
-    private static TradeRecipe resolveTyped(Level world, VillagerTrades.ItemListing listing,
-                                            ResourceLocation entityType, ResourceLocation profession,
-                                            List<ResourceLocation> workstations, int level)
-            throws ReflectiveOperationException {
-        if (listing instanceof VillagerTrades.DyedArmorForEmeralds trade) {
-            int value = intField(trade, "value");
-            return definition(entityType, profession, workstations, level,
-                    List.of(new ItemStack(Items.EMERALD)), value,
-                    List.of(ItemStack.EMPTY), 0,
-                    List.of(itemField(trade, "item").getDefaultInstance()), 1,
-                    intField(trade, "maxUses"), intField(trade, "villagerXp"), 0.2F,
-                    List.of(Component.translatable("jei_trade.detail.random_dye")));
+    /** Ensures a fallback sampler cannot locate structures or create persistent map data. */
+    static VillagerTrade forSampling(Level level, VillagerTrade trade) {
+        var ops = RegistryOps.create(JsonOps.INSTANCE, level.registryAccess());
+        JsonObject json = VillagerTrade.CODEC.encodeStart(ops, trade).getOrThrow().getAsJsonObject();
+        if (!containsFunction(json, "minecraft:exploration_map")) return trade;
+        JsonObject safe = withoutMapSearch(json).getAsJsonObject();
+        JsonElement gives = safe.get("gives");
+        if (gives.isJsonObject()) {
+            gives.getAsJsonObject().addProperty("id", "minecraft:filled_map");
+        } else {
+            safe.addProperty("gives", "minecraft:filled_map");
         }
-        if (listing instanceof VillagerTrades.EmeraldForItems trade) {
-            ItemCost cost = field(trade, "itemStack", ItemCost.class);
-            return definition(entityType, profession, workstations, level,
-                    List.of(cost.itemStack()), cost.count(),
-                    List.of(ItemStack.EMPTY), 0,
-                    List.of(new ItemStack(Items.EMERALD)), intField(trade, "emeraldAmount"),
-                    intField(trade, "maxUses"), intField(trade, "villagerXp"),
-                    floatField(trade, "priceMultiplier"), optionalDetail(trade, "enchantmentProvider"));
+        return VillagerTrade.CODEC.parse(ops, safe).getOrThrow();
+    }
+
+    private static int[] range(JsonElement element, int fallback) {
+        if (element == null) return new int[]{fallback, fallback};
+        if (element.isJsonPrimitive()) {
+            int n = (int) Math.floor(element.getAsDouble());
+            return new int[]{n, n};
         }
-        if (listing instanceof VillagerTrades.EmeraldsForVillagerTypeItem trade) {
-            Map<?, ?> trades = field(trade, "trades", Map.class);
-            List<ItemStack> outputs = trades.values().stream()
-                    .map(value -> ((net.minecraft.world.item.Item) value).getDefaultInstance())
-                    .distinct()
-                    .toList();
-            return definition(entityType, profession, workstations, level,
-                    List.of(new ItemStack(Items.EMERALD)), intField(trade, "cost"),
-                    List.of(ItemStack.EMPTY), 0, outputs, 1,
-                    intField(trade, "maxUses"), intField(trade, "villagerXp"), 0.2F,
-                    List.of(Component.translatable("jei_trade.detail.villager_type_output")));
-        }
-        if (listing instanceof VillagerTrades.EnchantBookForEmeralds trade) {
-            TagKey<Enchantment> tag = field(trade, "tradeableEnchantments", TagKey.class);
-            int minLevel = intField(trade, "minLevel");
-            int maxLevel = intField(trade, "maxLevel");
-            return definition(entityType, profession, workstations, level,
-                    List.of(new ItemStack(Items.EMERALD)), 5, 64,
-                    List.of(ItemStack.EMPTY), 0,
-                    enchantedBookVariants(world.registryAccess().registryOrThrow(Registries.ENCHANTMENT),
-                            tag, minLevel, maxLevel), 1,
-                    12, intField(trade, "villagerXp"), 0.2F,
-                    List.of(Component.translatable("jei_trade.detail.random_book_enchant")));
-        }
-        if (listing instanceof VillagerTrades.EnchantedItemForEmeralds trade) {
-            ItemStack item = stackField(trade, "itemStack");
-            int baseCost = intField(trade, "baseEmeraldCost");
-            return definition(entityType, profession, workstations, level,
-                    List.of(new ItemStack(Items.EMERALD)), baseCost + 5, baseCost + 19,
-                    List.of(ItemStack.EMPTY), 0, List.of(item), item.getCount(),
-                    intField(trade, "maxUses"), intField(trade, "villagerXp"),
-                    floatField(trade, "priceMultiplier"),
-                    List.of(Component.translatable("jei_trade.detail.random_enchant", 5, 19),
-                            treasureDetail(world, item)));
-        }
-        if (listing instanceof VillagerTrades.ItemsAndEmeraldsToItems trade) {
-            ItemCost from = field(trade, "fromItem", ItemCost.class);
-            ItemStack to = stackField(trade, "toItem");
-            return definition(entityType, profession, workstations, level,
-                    List.of(from.itemStack()), from.count(),
-                    List.of(new ItemStack(Items.EMERALD)), intField(trade, "emeraldCost"),
-                    List.of(to), to.getCount(), intField(trade, "maxUses"),
-                    intField(trade, "villagerXp"), floatField(trade, "priceMultiplier"),
-                    optionalDetail(trade, "enchantmentProvider"));
-        }
-        if (listing instanceof VillagerTrades.ItemsForEmeralds trade) {
-            ItemStack item = stackField(trade, "itemStack");
-            return definition(entityType, profession, workstations, level,
-                    List.of(new ItemStack(Items.EMERALD)), intField(trade, "emeraldCost"),
-                    List.of(ItemStack.EMPTY), 0, List.of(item), item.getCount(),
-                    intField(trade, "maxUses"), intField(trade, "villagerXp"),
-                    floatField(trade, "priceMultiplier"), optionalDetail(trade, "enchantmentProvider"));
-        }
-        if (listing instanceof VillagerTrades.SuspiciousStewForEmerald trade) {
-            SuspiciousStewEffects effects = field(trade, "effects", SuspiciousStewEffects.class);
-            ItemStack stew = Items.SUSPICIOUS_STEW.getDefaultInstance();
-            stew.set(DataComponents.SUSPICIOUS_STEW_EFFECTS, effects);
-            return definition(entityType, profession, workstations, level,
-                    List.of(new ItemStack(Items.EMERALD)), 1,
-                    List.of(ItemStack.EMPTY), 0, List.of(stew), 1,
-                    12, intField(trade, "xp"), floatField(trade, "priceMultiplier"),
-                    List.of(Component.translatable("jei_trade.detail.stew_effects")));
-        }
-        if (listing instanceof VillagerTrades.TippedArrowForItemsAndEmeralds trade) {
-            ItemStack to = stackField(trade, "toItem");
-            return definition(entityType, profession, workstations, level,
-                    List.of(itemField(trade, "fromItem").getDefaultInstance()), intField(trade, "fromCount"),
-                    List.of(new ItemStack(Items.EMERALD)), intField(trade, "emeraldCost"),
-                    List.of(to), intField(trade, "toCount"), intField(trade, "maxUses"),
-                    intField(trade, "villagerXp"), floatField(trade, "priceMultiplier"), List.of());
-        }
-        if (listing instanceof VillagerTrades.TreasureMapForEmeralds trade) {
-            String displayName = field(trade, "displayName", String.class);
-            ItemStack map = Items.MAP.getDefaultInstance();
-            map.set(DataComponents.ITEM_NAME, Component.translatable(displayName));
-            return definition(entityType, profession, workstations, level,
-                    List.of(new ItemStack(Items.EMERALD)), intField(trade, "emeraldCost"),
-                    List.of(new ItemStack(Items.COMPASS)), 1, List.of(map), 1,
-                    intField(trade, "maxUses"), intField(trade, "villagerXp"), 0.2F,
-                    List.of(Component.translatable("jei_trade.detail.treasure_map",
-                            Component.translatable(displayName))));
+        JsonObject object = element.getAsJsonObject();
+        String type = object.has("type") ? object.get("type").getAsString() : "";
+        if (type.equals("minecraft:constant")) return range(object.get("value"), fallback);
+        if (type.equals("minecraft:uniform")) {
+            int[] min = range(object.get("min"), fallback);
+            int[] max = range(object.get("max"), fallback);
+            return min == null || max == null ? null : new int[]{min[0], max[1]};
         }
         return null;
     }
 
-    private static TradeRecipe definition(ResourceLocation entityType, ResourceLocation profession,
-                                          List<ResourceLocation> workstations, int level,
-                                          List<ItemStack> buyA, int buyAMin, int buyAMax,
-                                          List<ItemStack> buyB, int buyBCount,
-                                          List<ItemStack> result, int resultCount,
-                                          int maxUses, int xp, float priceMultiplier,
-                                          List<Component> details) {
-        return definition(entityType, profession, workstations, level,
-                buyA, buyAMin, buyAMax, buyB, buyBCount, buyBCount,
-                result, resultCount, resultCount, maxUses, xp, priceMultiplier, details);
+    private static boolean isFunction(JsonElement element, String name) {
+        return element.isJsonObject() && element.getAsJsonObject().has("function")
+                && name.equals(element.getAsJsonObject().get("function").getAsString());
     }
 
-    private static TradeRecipe definition(ResourceLocation entityType, ResourceLocation profession,
-                                          List<ResourceLocation> workstations, int level,
-                                          List<ItemStack> buyA, int buyACount,
-                                          List<ItemStack> buyB, int buyBCount,
-                                          List<ItemStack> result, int resultCount,
-                                          int maxUses, int xp, float priceMultiplier,
-                                          List<Component> details) {
-        return TradeRecipe.fromDefinition(entityType, profession, workstations, level,
-                buyA, buyACount, buyACount, buyB, buyBCount, buyBCount,
-                result, resultCount, resultCount, maxUses, xp, priceMultiplier, details);
-    }
-
-    private static TradeRecipe definition(ResourceLocation entityType, ResourceLocation profession,
-                                          List<ResourceLocation> workstations, int level,
-                                          List<ItemStack> buyA, int buyAMin, int buyAMax,
-                                          List<ItemStack> buyB, int buyBMin, int buyBMax,
-                                          List<ItemStack> result, int resultMin, int resultMax,
-                                          int maxUses, int xp, float priceMultiplier,
-                                          List<Component> details) {
-        return TradeRecipe.fromDefinition(entityType, profession, workstations, level,
-                buyA, buyAMin, buyAMax, buyB, buyBMin, buyBMax,
-                result, resultMin, resultMax, maxUses, xp, priceMultiplier, details);
-    }
-
-    private static List<ItemStack> enchantedBookVariants(Registry<Enchantment> enchantments,
-                                                         TagKey<Enchantment> tag,
-                                                         int minLevel, int maxLevel) {
-        List<ItemStack> variants = new ArrayList<>();
-        for (Holder<Enchantment> holder : enchantments.getTagOrEmpty(tag)) {
-            Enchantment enchantment = holder.value();
-            for (int level = Math.max(minLevel, enchantment.getMinLevel());
-                 level <= Math.min(maxLevel, enchantment.getMaxLevel()); level++) {
-                variants.add(EnchantedBookItem.createForEnchantment(
-                        new EnchantmentInstance(holder, level)));
-                if (variants.size() >= 256) return variants;
+    private static boolean containsFunction(JsonElement element, String name) {
+        if (isFunction(element, name)) return true;
+        if (element.isJsonArray()) {
+            for (JsonElement child : element.getAsJsonArray()) if (containsFunction(child, name)) return true;
+        } else if (element.isJsonObject()) {
+            for (JsonElement child : element.getAsJsonObject().asMap().values()) {
+                if (containsFunction(child, name)) return true;
             }
         }
-        return variants.isEmpty() ? List.of(new ItemStack(Items.ENCHANTED_BOOK)) : variants;
+        return false;
     }
 
-    private static List<Component> optionalDetail(Object target, String fieldName)
-            throws ReflectiveOperationException {
-        Optional<?> provider = field(target, fieldName, Optional.class);
-        return provider.isPresent()
-                ? List.of(Component.translatable("jei_trade.detail.random_enchant_output"))
-                : List.of();
-    }
-
-    private static Component treasureDetail(Level world, ItemStack item) {
-        Registry<Enchantment> enchantments = world.registryAccess()
-                .registryOrThrow(Registries.ENCHANTMENT);
-        boolean hasCandidate = false;
-        boolean hasTreasure = false;
-        boolean hasNonTreasure = false;
-        boolean hasUnknown = false;
-        List<Holder<Enchantment>> tradedEnchantments = new ArrayList<>();
-        for (Holder<Enchantment> holder : enchantments.getTagOrEmpty(EnchantmentTags.ON_TRADED_EQUIPMENT)) {
-            tradedEnchantments.add(holder);
+    /** Vanilla guards discard previews lacking generated map IDs or stored enchantments. */
+    private static boolean isPreviewGuard(JsonElement element, String component) {
+        if (!isFunction(element, "minecraft:filtered")) return false;
+        JsonObject function = element.getAsJsonObject();
+        if (function.has("on_pass") || !function.has("on_fail")
+                || !isFunction(function.get("on_fail"), "minecraft:discard")) return false;
+        if (!function.has("item_filter") || !function.get("item_filter").isJsonObject()) return false;
+        JsonObject filter = function.getAsJsonObject("item_filter");
+        if (!filter.has("predicates") || !filter.get("predicates").isJsonObject()
+                || !filter.getAsJsonObject("predicates").has(component)) return false;
+        JsonObject predicates = filter.getAsJsonObject("predicates");
+        if (predicates.size() != 1 || filter.size() != 2 || !filter.has("items")) return false;
+        String expectedItem = component.equals("minecraft:map_id")
+                ? "minecraft:filled_map" : "minecraft:enchanted_book";
+        JsonElement items = filter.get("items");
+        if (items.isJsonArray() && items.getAsJsonArray().size() == 1) items = items.getAsJsonArray().get(0);
+        if (!items.isJsonPrimitive() || !items.getAsString().equals(expectedItem)) return false;
+        JsonElement predicate = predicates.get(component);
+        if (component.equals("minecraft:stored_enchantments")) {
+            if (!predicate.isJsonArray() || predicate.getAsJsonArray().size() != 1) return false;
+            predicate = predicate.getAsJsonArray().get(0);
         }
-        for (EnchantmentInstance candidate : EnchantmentHelper.getAvailableEnchantmentResults(
-                19, item, tradedEnchantments.stream())) {
-            hasCandidate = true;
-            if (candidate.enchantment.is(EnchantmentTags.TREASURE)) {
-                hasTreasure = true;
-            } else if (candidate.enchantment.is(EnchantmentTags.NON_TREASURE)) {
-                hasNonTreasure = true;
-            } else {
-                hasUnknown = true;
-            }
+        return predicate.isJsonObject() && predicate.getAsJsonObject().size() == 0;
+    }
+
+    private static JsonElement withoutMapSearch(JsonElement element) {
+        if (isFunction(element, "minecraft:exploration_map")
+                || isPreviewGuard(element, "minecraft:map_id")) {
+            JsonObject identity = new JsonObject();
+            identity.addProperty("function", "minecraft:sequence");
+            identity.add("functions", new JsonArray());
+            return identity;
         }
-        return Component.translatable("jei_trade.detail.treasure_enchant",
-                Component.translatable(treasureStatusKey(hasCandidate, hasTreasure,
-                        hasNonTreasure, hasUnknown)));
-    }
-
-    private static String treasureStatusKey(boolean hasCandidate, boolean hasTreasure,
-                                             boolean hasNonTreasure, boolean hasUnknown) {
-        if (!hasCandidate) return "jei_trade.unknown";
-        if (hasTreasure && !hasNonTreasure && !hasUnknown) return "jei_trade.yes";
-        if (!hasTreasure && hasNonTreasure && !hasUnknown) return "jei_trade.no";
-        return "jei_trade.possible";
-    }
-
-    private static int intField(Object target, String name) throws ReflectiveOperationException {
-        return field(target, name, Integer.class);
-    }
-
-    private static float floatField(Object target, String name) throws ReflectiveOperationException {
-        return field(target, name, Float.class);
-    }
-
-    private static ItemStack stackField(Object target, String name) throws ReflectiveOperationException {
-        return field(target, name, ItemStack.class).copy();
-    }
-
-    private static net.minecraft.world.item.Item itemField(Object target, String name)
-            throws ReflectiveOperationException {
-        return field(target, name, net.minecraft.world.item.Item.class);
-    }
-
-    private static <T> T field(Object target, String name, Class<T> type)
-            throws ReflectiveOperationException {
-        Class<?> current = target.getClass();
-        while (current != null) {
-            try {
-                Field field = current.getDeclaredField(name);
-                field.setAccessible(true);
-                return type.cast(field.get(target));
-            } catch (NoSuchFieldException ignored) {
-                current = current.getSuperclass();
-            }
+        if (element.isJsonObject()) {
+            JsonObject result = new JsonObject();
+            element.getAsJsonObject().asMap().forEach((key, value) -> result.add(key, withoutMapSearch(value)));
+            return result;
         }
-        throw new NoSuchFieldException(target.getClass().getName() + "." + name);
+        if (element.isJsonArray()) {
+            JsonArray result = new JsonArray();
+            for (JsonElement child : element.getAsJsonArray()) result.add(withoutMapSearch(child));
+            return result;
+        }
+        return element.deepCopy();
     }
 }
